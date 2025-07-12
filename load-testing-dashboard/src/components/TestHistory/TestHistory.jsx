@@ -212,9 +212,11 @@ const TestHistory = ({ onNavigateToVisualization, isTestRunning }) => {
                         
                         <button
                           onClick={() => handleViewVisualization(test)}
+                          className={cn(
                             'text-purple-600 hover:text-purple-900',
                             isTestRunning && 'opacity-50 cursor-not-allowed'
-                          className="text-purple-600 hover:text-purple-900"
+                          )}
+                          disabled={isTestRunning}
                           title="Voir les graphiques"
                         >
                           <PresentationChartLineIcon className="h-4 w-4" />
