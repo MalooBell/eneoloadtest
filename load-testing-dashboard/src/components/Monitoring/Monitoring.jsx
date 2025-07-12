@@ -7,21 +7,13 @@ import {
 } from '@heroicons/react/24/outline';
 
 const Monitoring = () => {
-  const [activeTab, setActiveTab] = useState('grafana');
+  const [activeTab, setActiveTab] = useState('locust');
   const [iframeState, setIframeState] = useState({
-    grafana: { loading: true, error: false },
     locust: { loading: true, error: false },
     prometheus: { loading: true, error: false },
   });
 
   const monitoringTools = [
-    {
-      id: 'grafana',
-      name: 'Grafana',
-      description: 'Tableaux de bord et visualisations',
-      url: 'http://localhost:3000/dashboards',  // URL directe du dashboard
-      icon: '📊'
-    },
     {
       id: 'locust',
       name: 'Locust',
@@ -45,7 +37,6 @@ const Monitoring = () => {
         [activeTab]: { loading: true, error: false }
     }));
   }, [activeTab]);
-
 
   const activeTool = monitoringTools.find(tool => tool.id === activeTab);
   const currentIframeState = iframeState[activeTab];

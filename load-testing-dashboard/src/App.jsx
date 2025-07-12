@@ -4,6 +4,7 @@ import TestForm from './components/TestForm/TestForm';
 import TestMetrics from './components/TestMetrics/TestMetrics';
 import TestHistory from './components/TestHistory/TestHistory';
 import Monitoring from './components/Monitoring/Monitoring';
+import Visualization from './components/Visualization/Visualization';
 import { testService } from './services/api';
 import { useWebSocket, useWebSocketConnection } from './hooks/useWebSocket';
 
@@ -115,6 +116,9 @@ function App() {
       
       case 'monitoring':
         return <Monitoring />;
+      
+      case 'visualization':
+        return <Visualization />;
       
       case 'history':
         return <TestHistory />;

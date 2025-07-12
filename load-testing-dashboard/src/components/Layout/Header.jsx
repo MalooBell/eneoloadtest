@@ -3,6 +3,7 @@ import {
   BeakerIcon, 
   ChartBarIcon, 
   ClockIcon,
+  PresentationChartLineIcon,
   EllipsisVerticalIcon,
   ArrowTopRightOnSquareIcon
 } from '@heroicons/react/24/outline';
@@ -12,13 +13,13 @@ const Header = ({ currentTab, onTabChange, isTestRunning }) => {
   const tabs = [
     { id: 'new-test', label: 'Nouveau Test', icon: BeakerIcon },
     { id: 'monitoring', label: 'Monitoring', icon: ChartBarIcon },
+    { id: 'visualization', label: 'Visualisation', icon: PresentationChartLineIcon },
     { id: 'history', label: 'Historique', icon: ClockIcon },
   ];
 
   const externalLinks = [
     { label: 'Locust UI', url: 'http://localhost:8089', color: 'text-green-600' },
     { label: 'Prometheus', url: 'http://localhost:9090', color: 'text-orange-600' },
-    { label: 'Grafana', url: 'http://localhost:3000', color: 'text-blue-600' },
   ];
 
   return (

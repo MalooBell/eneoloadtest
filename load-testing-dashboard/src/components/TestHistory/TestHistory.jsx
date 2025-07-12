@@ -3,7 +3,8 @@ import {
   ClockIcon, 
   ChartBarIcon, 
   ArrowTopRightOnSquareIcon,
-  EyeIcon
+  EyeIcon,
+  PresentationChartLineIcon
 } from '@heroicons/react/24/outline';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -200,11 +201,11 @@ const TestHistory = () => {
                         </button>
                         
                         <button
-                          onClick={() => openInGrafana(test)}
-                          className="text-blue-600 hover:text-blue-900"
-                          title="Ouvrir dans Grafana"
+                          onClick={() => setSelectedTest(test)}
+                          className="text-purple-600 hover:text-purple-900"
+                          title="Voir les graphiques"
                         >
-                          <ChartBarIcon className="h-4 w-4" />
+                          <PresentationChartLineIcon className="h-4 w-4" />
                         </button>
                         
                         <a
@@ -273,11 +274,11 @@ const TestHistory = () => {
             
             <div className="p-4 bg-gray-50 border-t flex justify-end space-x-3">
               <button
-                onClick={() => openInGrafana(selectedTest)}
+                onClick={() => setSelectedTest(null)}
                 className="btn-primary"
               >
-                <ChartBarIcon className="h-4 w-4 mr-2" />
-                Ouvrir dans Grafana
+                <PresentationChartLineIcon className="h-4 w-4 mr-2" />
+                Voir les Graphiques
               </button>
               
               <button
