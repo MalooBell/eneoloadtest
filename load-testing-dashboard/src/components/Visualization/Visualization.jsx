@@ -21,6 +21,7 @@ const Visualization = () => {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [isTestRunning, setIsTestRunning] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(null);
 
   const sections = [
     {
@@ -130,8 +131,12 @@ const Visualization = () => {
   // Effet pour l'auto-refresh des métriques Node uniquement
   useEffect(() => {
     if (autoRefresh) {
-      const interval = setInterval(fetchNodeData, 5000); // Refresh Node toutes les 5 secondes
-      return () => clearInterval(interval);
+      const interval = setInterval(fetchNodeData, 3000); // Refresh Node toutes les 3 secondes pour plus de fluidité
+      setRefreshInterval(interval);
+      return () => {
+        clearInterval(interval);
+        setRefreshInterval(null);
+      };
     }
   }, [autoRefresh, isTestRunning]);
 
@@ -166,9 +171,14 @@ const Visualization = () => {
           
           {lastUpdate && (
             <span className="text-sm text-gray-500">
-              Dernière MAJ: {lastUpdate.toLocaleTimeString()}
+              MAJ: {lastUpdate.toLocaleTimeString()}
             </span>
           )}
+          
+          <div className="flex items-center space-x-2 text-sm text-gray-500">
+            <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
+            <span>{autoRefresh ? 'Temps réel' : 'Manuel'}</span>
+          </div>
           
           <button
             onClick={toggleAutoRefresh}
@@ -179,7 +189,7 @@ const Visualization = () => {
             }`}
           >
             {autoRefresh ? <EyeIcon className="h-4 w-4" /> : <EyeSlashIcon className="h-4 w-4" />}
-            <span>{autoRefresh ? 'Auto Node' : 'Manuel'}</span>
+            <span>{autoRefresh ? 'Auto' : 'Manuel'}</span>
           </button>
           
           <button
