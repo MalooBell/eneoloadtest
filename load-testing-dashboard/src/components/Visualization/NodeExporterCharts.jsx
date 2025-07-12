@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { memo } from 'react';
 import {
   LineChart,
   Line,
@@ -21,7 +22,7 @@ import {
 } from '@heroicons/react/24/outline';
 import MetricCard from '../Common/MetricCard';
 
-const NodeExporterCharts = ({ history, latestData, loading }) => {
+const NodeExporterCharts = memo(({ history, latestData, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
     overview: true,
     cpu: true,
@@ -111,7 +112,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
 
   const currentMetrics = getCurrentMetrics();
 
-  const ChartContainer = ({ title, children, chartId, dataCount = 0 }) => (
+  const ChartContainer = memo(({ title, children, chartId, dataCount = 0 }) => (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -127,7 +128,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
       </div>
       {visibleCharts[chartId] && children}
     </div>
-  );
+  ));
 
   return (
     <div className="space-y-6">
@@ -172,7 +173,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
         dataCount={history.cpu?.length || 0}
       >
         {history.cpu && history.cpu.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <LineChart data={history.cpu}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -196,6 +197,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 name="Utilisation CPU %" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -213,7 +215,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
         dataCount={history.memory?.length || 0}
       >
         {history.memory && history.memory.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <AreaChart data={history.memory}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -237,6 +239,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 fill="#ef4444" 
                 fillOpacity={0.6} 
                 name="Utilisée (GB)" 
+                isAnimationActive={false}
               />
               <Area 
                 type="monotone" 
@@ -246,6 +249,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 fill="#22c55e" 
                 fillOpacity={0.6} 
                 name="Disponible (GB)" 
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -263,7 +267,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
         dataCount={history.disk?.length || 0}
       >
         {history.disk && history.disk.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <AreaChart data={history.disk}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -287,6 +291,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 fill="#ef4444" 
                 fillOpacity={0.6} 
                 name="Utilisé (GB)" 
+                isAnimationActive={false}
               />
               <Area 
                 type="monotone" 
@@ -296,6 +301,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 fill="#22c55e" 
                 fillOpacity={0.6} 
                 name="Disponible (GB)" 
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -313,7 +319,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
         dataCount={history.network?.length || 0}
       >
         {history.network && history.network.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <AreaChart data={history.network}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -334,6 +340,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 fill="#3b82f6" 
                 fillOpacity={0.6} 
                 name="Reçu (MB)" 
+                isAnimationActive={false}
               />
               <Area 
                 type="monotone" 
@@ -343,6 +350,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 fill="#10b981" 
                 fillOpacity={0.6} 
                 name="Envoyé (MB)" 
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -360,7 +368,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
         dataCount={history.load?.length || 0}
       >
         {history.load && history.load.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <LineChart data={history.load}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -381,6 +389,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 name="1 minute" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
               <Line 
                 type="monotone" 
@@ -390,6 +399,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 name="5 minutes" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
               <Line 
                 type="monotone" 
@@ -399,6 +409,7 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
                 name="15 minutes" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -475,6 +486,13 @@ const NodeExporterCharts = ({ history, latestData, loading }) => {
       </div>
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Comparaison personnalisée pour éviter les re-rendus inutiles
+  return (
+    prevProps.loading === nextProps.loading &&
+    prevProps.history === nextProps.history &&
+    prevProps.latestData === nextProps.latestData
+  );
+});
 
 export default NodeExporterCharts;

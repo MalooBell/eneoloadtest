@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { memo } from 'react';
 import {
   LineChart,
   Line,
@@ -21,7 +22,7 @@ import {
 } from '@heroicons/react/24/outline';
 import MetricCard from '../Common/MetricCard';
 
-const LocustMetricsCharts = ({ history, latestData, loading }) => {
+const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
     overview: true,
     responseTime: true,
@@ -72,7 +73,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
 
   const aggregatedStats = getCurrentMetrics();
 
-  const ChartContainer = ({ title, children, chartId, dataCount = 0 }) => (
+  const ChartContainer = memo(({ title, children, chartId, dataCount = 0 }) => (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
         <div>
@@ -88,7 +89,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
       </div>
       {visibleCharts[chartId] && children}
     </div>
-  );
+  ));
 
   return (
     <div className="space-y-6">
@@ -134,7 +135,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
         dataCount={history.responseTime?.length || 0}
       >
         {history.responseTime && history.responseTime.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <LineChart data={history.responseTime}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -155,6 +156,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 name="Moyenne (ms)" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
               <Line 
                 type="monotone" 
@@ -164,6 +166,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 name="Médiane (ms)" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
               <Line 
                 type="monotone" 
@@ -173,6 +176,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 name="95e centile (ms)" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -190,7 +194,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
         dataCount={history.requestsRate?.length || 0}
       >
         {history.requestsRate && history.requestsRate.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <AreaChart data={history.requestsRate}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -211,6 +215,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 fill="#3b82f6" 
                 fillOpacity={0.6} 
                 name="RPS Actuel" 
+                isAnimationActive={false}
               />
               <Area 
                 type="monotone" 
@@ -220,6 +225,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 fill="#10b981" 
                 fillOpacity={0.4} 
                 name="RPS Total" 
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -237,7 +243,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
         dataCount={history.errorRate?.length || 0}
       >
         {history.errorRate && history.errorRate.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <LineChart data={history.errorRate}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -260,6 +266,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 name="Nombre d'échecs" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
               <Line 
                 yAxisId="right"
@@ -270,6 +277,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 name="Taux d'erreur %" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -287,7 +295,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
         dataCount={history.requestsTotal?.length || 0}
       >
         {history.requestsTotal && history.requestsTotal.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <AreaChart data={history.requestsTotal}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -308,6 +316,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 fill="#22c55e" 
                 fillOpacity={0.6} 
                 name="Succès" 
+                isAnimationActive={false}
               />
               <Area 
                 type="monotone" 
@@ -317,6 +326,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 fill="#ef4444" 
                 fillOpacity={0.6} 
                 name="Échecs" 
+                isAnimationActive={false}
               />
             </AreaChart>
           </ResponsiveContainer>
@@ -334,7 +344,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
         dataCount={history.userCount?.length || 0}
       >
         {history.userCount && history.userCount.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={300} debounce={100}>
             <LineChart data={history.userCount}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
@@ -355,6 +365,7 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
                 name="Utilisateurs actifs" 
                 dot={false}
                 connectNulls={false}
+                isAnimationActive={false}
               />
             </LineChart>
           </ResponsiveContainer>
@@ -435,6 +446,13 @@ const LocustMetricsCharts = ({ history, latestData, loading }) => {
       </div>
     </div>
   );
-};
+}, (prevProps, nextProps) => {
+  // Comparaison personnalisée pour éviter les re-rendus inutiles
+  return (
+    prevProps.loading === nextProps.loading &&
+    prevProps.history === nextProps.history &&
+    prevProps.latestData === nextProps.latestData
+  );
+});
 
 export default LocustMetricsCharts;

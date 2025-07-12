@@ -51,6 +51,10 @@ const Visualization = () => {
   // Dernières données reçues (pour les métriques instantanées)
   const [latestLocustData, setLatestLocustData] = useState(null);
   const [latestNodeData, setLatestNodeData] = useState(null);
+  
+  // État pour éviter les re-rendus inutiles
+  const [lastLocustUpdate, setLastLocustUpdate] = useState(0);
+  const [lastNodeUpdate, setLastNodeUpdate] = useState(0);
 
   const sections = [
     {
@@ -82,10 +86,23 @@ const Visualization = () => {
   const accumulateLocustData = useCallback((newData) => {
     if (!newData || !newData.stats) return;
 
+    const now = Date.now();
+    // Éviter les mises à jour trop fréquentes (minimum 1 seconde)
+    if (now - lastLocustUpdate < 1000) return;
+    setLastLocustUpdate(now);
     const timestamp = new Date().toLocaleTimeString();
     const aggregatedStats = newData.stats.find(stat => stat.name === 'Aggregated') || {};
 
-    setLocustHistory(prev => {
+    setLocustHistory(prevHistory => {
+      // Vérifier si les données ont vraiment changé
+      const lastPoint = prevHistory.responseTime[prevHistory.responseTime.length - 1];
+      const newAvgResponseTime = aggregatedStats.avg_response_time || 0;
+      
+      if (lastPoint && Math.abs(lastPoint.avg - newAvgResponseTime) < 0.1) {
+        // Pas de changement significatif, ne pas mettre à jour
+        return prevHistory;
+      }
+      
       const newHistory = { ...prev };
 
       // Point de données pour les temps de réponse
