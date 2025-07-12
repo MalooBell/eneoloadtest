@@ -55,20 +55,26 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
     }));
   };
 
+  // Fonction utilitaire pour traiter les métriques Prometheus
+  const processMetricData = useMemo(() => (metricData) => {
+    if (!metricData || !metricData.data || !metricData.data.result) return [];
+    return metricData.data.result;
+  }, []);
+
   // Mémoriser les métriques actuelles pour éviter les recalculs
   const currentMetrics = useMemo(() => {
     if (!latestData) return {};
 
-    const processMetricData = (metricData) => {
-      if (!metricData || !metricData.data || !metricData.data.result) return [];
-      return metricData.data.result;
-    };
-
     const cpuData = processMetricData(latestData['rate(node_cpu_seconds_total[5m])']);
     const memoryTotal = processMetricData(latestData['node_memory_MemTotal_bytes']);
     const memoryAvailable = processMetricData(latestData['node_memory_MemAvailable_bytes']);
+    const diskSize = processMetricData(latestData['node_filesystem_size_bytes']);
+    const diskAvail = processMetricData(latestData['node_filesystem_avail_bytes']);
     const load1 = processMetricData(latestData['node_load1']);
+    const load5 = processMetricData(latestData['node_load5']);
+    const load15 = processMetricData(latestData['node_load15']);
     const networkRx = processMetricData(latestData['node_network_receive_bytes_total']);
+    const networkTx = processMetricData(latestData['node_network_transmit_bytes_total']);
 
     const calculateCpuUsage = () => {
       if (!cpuData.length) return 0;
@@ -92,13 +98,37 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
       };
     };
 
+    const calculateDiskUsage = () => {
+      if (!diskSize.length || !diskAvail.length) return { percentage: 0, used: 0, total: 0 };
+      const size = parseFloat(diskSize[0].value[1]);
+      const avail = diskAvail[0] ? parseFloat(diskAvail[0].value[1]) : 0;
+      const used = size - avail;
+      const percentage = size > 0 ? Math.round((used / size) * 100) : 0;
+      return {
+        used: Math.round(used / 1024 / 1024 / 1024),
+        total: Math.round(size / 1024 / 1024 / 1024),
+        percentage
+      };
+    };
+
+    const calculateNetworkUsage = () => {
+      if (!networkRx.length || !networkTx.length) return { rx: 0, tx: 0 };
+      const rx = Math.round(parseFloat(networkRx[0].value[1]) / 1024 / 1024);
+      const tx = Math.round(parseFloat(networkTx[0].value[1]) / 1024 / 1024);
+      return { rx, tx };
+    };
+
     return {
       cpuUsage: calculateCpuUsage(),
       memoryUsage: calculateMemoryUsage(),
+      diskUsage: calculateDiskUsage(),
+      networkUsage: calculateNetworkUsage(),
       load1: load1.length ? parseFloat(load1[0].value[1]).toFixed(2) : 0,
+      load5: load5.length ? parseFloat(load5[0].value[1]).toFixed(2) : 0,
+      load15: load15.length ? parseFloat(load15[0].value[1]).toFixed(2) : 0,
       networkCount: networkRx.filter(net => net.metric.device !== 'lo').length
     };
-  }, [latestData]);
+  }, [latestData, processMetricData]);
 
   // Mémoriser les données des graphiques pour éviter les re-rendus
   const chartData = useMemo(() => ({
@@ -173,16 +203,16 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
             color={currentMetrics.memoryUsage?.percentage > 80 ? 'error' : currentMetrics.memoryUsage?.percentage > 60 ? 'warning' : 'success'}
           />
           <MetricCard
+            title="Disque utilisé"
+            value={currentMetrics.diskUsage?.percentage || 0}
+            unit="%"
+            icon={ServerIcon}
+            color={currentMetrics.diskUsage?.percentage > 80 ? 'error' : currentMetrics.diskUsage?.percentage > 60 ? 'warning' : 'success'}
+          />
+          <MetricCard
             title="Load Average (1m)"
             value={currentMetrics.load1 || 0}
             unit=""
-            icon={ServerIcon}
-            color="primary"
-          />
-          <MetricCard
-            title="Interfaces réseau"
-            value={currentMetrics.networkCount || 0}
-            unit="actives"
             icon={WifiIcon}
             color="primary"
           />
@@ -445,11 +475,23 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
           <h4 className="text-lg font-medium text-gray-900 mb-4">Informations Système (Temps Réel)</h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
-              <h5 className="font-medium text-gray-700 mb-2">CPU</h5>
+              <h5 className="font-medium text-gray-700 mb-2">CPU & Load</h5>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-gray-500">Utilisation moyenne:</span>
                   <span className="font-medium">{currentMetrics.cpuUsage}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Load 1m:</span>
+                  <span className="font-medium">{currentMetrics.load1}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Load 5m:</span>
+                  <span className="font-medium">{currentMetrics.load5}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Load 15m:</span>
+                  <span className="font-medium">{currentMetrics.load15}</span>
                 </div>
               </div>
             </div>
@@ -462,22 +504,38 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
                   <span className="font-medium">{currentMetrics.memoryUsage?.total || 0} GB</span>
                 </div>
                 <div className="flex justify-between">
+                  <span className="text-gray-500">Utilisée:</span>
+                  <span className="font-medium">{currentMetrics.memoryUsage?.used || 0} GB</span>
+                </div>
+                <div className="flex justify-between">
                   <span className="text-gray-500">Disponible:</span>
                   <span className="font-medium">{(currentMetrics.memoryUsage?.total || 0) - (currentMetrics.memoryUsage?.used || 0)} GB</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Pourcentage:</span>
+                  <span className="font-medium">{currentMetrics.memoryUsage?.percentage || 0}%</span>
                 </div>
               </div>
             </div>
             
             <div>
-              <h5 className="font-medium text-gray-700 mb-2">Réseau</h5>
+              <h5 className="font-medium text-gray-700 mb-2">Stockage & Réseau</h5>
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Interfaces:</span>
+                  <span className="text-gray-500">Disque utilisé:</span>
+                  <span className="font-medium">{currentMetrics.diskUsage?.percentage || 0}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Espace total:</span>
+                  <span className="font-medium">{currentMetrics.diskUsage?.total || 0} GB</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Interfaces réseau:</span>
                   <span className="font-medium">{currentMetrics.networkCount}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Load Average:</span>
-                  <span className="font-medium">{currentMetrics.load1}</span>
+                  <span className="text-gray-500">Trafic RX:</span>
+                  <span className="font-medium">{currentMetrics.networkUsage?.rx || 0} MB</span>
                 </div>
               </div>
             </div>
@@ -488,7 +546,7 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
       {/* Résumé de l'historique */}
       <div className="card">
         <h4 className="text-lg font-medium text-gray-900 mb-4">Résumé de l'Historique Accumulé</h4>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
           <div className="text-center p-3 bg-gray-50 rounded-lg">
             <div className="text-lg font-bold text-gray-700">{chartData.cpu.length}</div>
             <div className="text-xs text-gray-600">Points CPU</div>
@@ -498,8 +556,16 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
             <div className="text-xs text-gray-600">Points mémoire</div>
           </div>
           <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <div className="text-lg font-bold text-gray-700">{chartData.disk.length}</div>
+            <div className="text-xs text-gray-600">Points disque</div>
+          </div>
+          <div className="text-center p-3 bg-gray-50 rounded-lg">
             <div className="text-lg font-bold text-gray-700">{chartData.network.length}</div>
             <div className="text-xs text-gray-600">Points réseau</div>
+          </div>
+          <div className="text-center p-3 bg-gray-50 rounded-lg">
+            <div className="text-lg font-bold text-gray-700">{chartData.load.length}</div>
+            <div className="text-xs text-gray-600">Points load</div>
           </div>
         </div>
       </div>
