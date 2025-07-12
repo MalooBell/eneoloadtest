@@ -1,0 +1,13 @@
+apiVersion: 1
+datasources:
+  - # =================================================================
+    #                         CORRECTION FINALE
+    # =================================================================
+    # On donne un nom et un UID stables que les dashboards peuvent trouver.
+    # 'Prometheus' est le nom le plus standard attendu par les dashboards communautaires.
+    uid: prometheus_loadtest
+    name: Prometheus 
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
