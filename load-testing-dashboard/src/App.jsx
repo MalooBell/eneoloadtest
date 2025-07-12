@@ -5,6 +5,7 @@ import TestMetrics from './components/TestMetrics/TestMetrics';
 import TestHistory from './components/TestHistory/TestHistory';
 import Monitoring from './components/Monitoring/Monitoring';
 import Visualization from './components/Visualization/Visualization';
+import Visualization from './components/Visualization/Visualization';
 import { testService } from './services/api';
 import { useWebSocket, useWebSocketConnection } from './hooks/useWebSocket';
 
