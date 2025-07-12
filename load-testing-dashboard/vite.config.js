@@ -4,6 +4,14 @@ import react from '@vitejs/plugin-react'
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  define: {
+    'import.meta.env.VITE_API_BASE_URL': JSON.stringify(
+      process.env.PORT_3001 ? `https://${process.env.PORT_3001}` : 'http://localhost:3001'
+    ),
+    'import.meta.env.VITE_WS_URL': JSON.stringify(
+      process.env.PORT_3001 ? `wss://${process.env.PORT_3001}` : 'ws://localhost:3001'
+    ),
+  },
   server: {
     port: 4200,
     host: true,
