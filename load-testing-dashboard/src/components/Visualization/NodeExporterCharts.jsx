@@ -38,7 +38,7 @@ const CustomTooltip = memo(({ active, payload, label }) => {
   return null;
 });
 
-const NodeExporterCharts = memo(({ history, latestData, loading }) => {
+const NodeExporterCharts = memo(({ historyRef, historyVersion, latestData, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
     overview: true,
     cpu: true,
@@ -130,14 +130,17 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
     };
   }, [latestData, processMetricData]);
 
-  // Mémoriser les données des graphiques pour éviter les re-rendus
-  const chartData = useMemo(() => ({
-    cpu: history.cpu || [],
-    memory: history.memory || [],
-    disk: history.disk || [],
-    network: history.network || [],
-    load: history.load || []
-  }), [history]);
+  // Utiliser historyRef.current et historyVersion pour mémoriser les données
+  const chartData = useMemo(() => {
+    const history = historyRef.current;
+    return {
+      cpu: history.cpu || [],
+      memory: history.memory || [],
+      disk: history.disk || [],
+      network: history.network || [],
+      load: history.load || []
+    };
+  }, [historyRef, historyVersion]); // Le re-calcul se fait uniquement quand la version change !
 
   if (loading && !latestData) {
     return (
@@ -151,7 +154,7 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
     );
   }
 
-  if (!latestData && (!history || Object.values(history).every(arr => arr.length === 0))) {
+  if (!latestData && (!chartData || Object.values(chartData).every(arr => arr.length === 0))) {
     return (
       <div className="card text-center py-12">
         <ServerIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />

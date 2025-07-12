@@ -38,7 +38,7 @@ const CustomTooltip = memo(({ active, payload, label }) => {
   return null;
 });
 
-const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
+const LocustMetricsCharts = memo(({ historyRef, historyVersion, latestData, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
     overview: true,
     responseTime: true,
@@ -61,14 +61,17 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
     return latestData.stats.find(stat => stat.name === 'Aggregated') || {};
   }, [latestData]);
 
-  // Mémoriser les données des graphiques pour éviter les re-rendus
-  const chartData = useMemo(() => ({
-    responseTime: history.responseTime || [],
-    requestsRate: history.requestsRate || [],
-    errorRate: history.errorRate || [],
-    userCount: history.userCount || [],
-    requestsTotal: history.requestsTotal || []
-  }), [history]);
+  // Utiliser historyRef.current et historyVersion pour mémoriser les données
+  const chartData = useMemo(() => {
+    const history = historyRef.current;
+    return {
+      responseTime: history.responseTime || [],
+      requestsRate: history.requestsRate || [],
+      errorRate: history.errorRate || [],
+      userCount: history.userCount || [],
+      requestsTotal: history.requestsTotal || []
+    };
+  }, [historyRef, historyVersion]); // Le re-calcul se fait uniquement quand la version change !
 
   if (loading && !latestData) {
     return (
@@ -82,7 +85,7 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
     );
   }
 
-  if (!latestData && (!history || Object.values(history).every(arr => arr.length === 0))) {
+  if (!latestData && (!chartData || Object.values(chartData).every(arr => arr.length === 0))) {
     return (
       <div className="card text-center py-12">
         <ChartBarIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
@@ -404,6 +407,45 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
         )}
       </ChartContainer>
 
+      {/* Détails supplémentaires */}
+      {latestData && (
+        <div className="card">
+          <h4 className="text-md font-medium text-gray-900 mb-4">
+            Détails des performances
+          </h4>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-gray-500">Total requêtes</p>
+              <p className="font-semibold text-gray-900">
+                {currentMetrics.num_requests?.toLocaleString() || 0}
+              </p>
+            </div>
+            
+            <div>
+              <p className="text-gray-500">Échecs</p>
+              <p className="font-semibold text-gray-900">
+                {currentMetrics.num_failures?.toLocaleString() || 0}
+              </p>
+            </div>
+            
+            <div>
+              <p className="text-gray-500">Médiane</p>
+              <p className="font-semibold text-gray-900">
+                {currentMetrics.median_response_time || 0} ms
+              </p>
+            </div>
+            
+            <div>
+              <p className="text-gray-500">95e centile</p>
+              <p className="font-semibold text-gray-900">
+                {currentMetrics['95%_response_time'] || 0} ms
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Détails techniques en temps réel */}
       {latestData && (
         <div className="card">
@@ -415,18 +457,21 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
                 {currentMetrics.num_requests?.toLocaleString() || 0}
               </p>
             </div>
+            
             <div>
               <p className="text-gray-500">Min réponse</p>
               <p className="font-semibold text-gray-900">
                 {currentMetrics.min_response_time || 0} ms
               </p>
             </div>
+            
             <div>
               <p className="text-gray-500">Max réponse</p>
               <p className="font-semibold text-gray-900">
                 {currentMetrics.max_response_time || 0} ms
               </p>
             </div>
+            
             <div>
               <p className="text-gray-500">95e centile</p>
               <p className="font-semibold text-gray-900">

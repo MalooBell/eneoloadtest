@@ -31,11 +31,11 @@ const Visualization = () => {
   const dataBufferRef = useRef({ locust: null, node: null });
 
   // ===================================================================
-  //                    HISTORIQUE DES DONNÉES CENTRALISÉ
+  //          HISTORIQUE DES DONNÉES AVEC useRef (NOUVELLE APPROCHE)
   // ===================================================================
   
-  // Historique Locust - accumulé au fil du temps
-  const [locustHistory, setLocustHistory] = useState({
+  // Historique Locust - stocké dans une référence pour éviter les re-rendus
+  const locustHistoryRef = useRef({
     responseTime: [],
     requestsRate: [],
     errorRate: [],
@@ -44,14 +44,17 @@ const Visualization = () => {
     failuresTotal: []
   });
 
-  // Historique Node Exporter - accumulé au fil du temps
-  const [nodeHistory, setNodeHistory] = useState({
+  // Historique Node Exporter - stocké dans une référence pour éviter les re-rendus
+  const nodeHistoryRef = useRef({
     cpu: [],
     memory: [],
     disk: [],
     network: [],
     load: []
   });
+
+  // Cet état servira à déclencher manuellement le re-rendu des graphiques
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   // Dernières données reçues (pour les métriques instantanées)
   const [latestLocustData, setLatestLocustData] = useState(null);
@@ -96,7 +99,7 @@ const Visualization = () => {
     return Math.abs(oldValue - newValue) > threshold;
   }, []);
 
-  // Accumulation des données Locust avec throttling
+  // Accumulation des données Locust avec throttling et useRef
   const accumulateLocustData = useCallback((newData) => {
     if (!newData || !newData.stats) return;
 
@@ -119,74 +122,75 @@ const Visualization = () => {
     const aggregatedStats = dataToProcess.stats.find(stat => stat.name === 'Aggregated') || {};
 
     // Vérifier si les données ont changé de manière significative
-    const lastPoint = locustHistory.responseTime[locustHistory.responseTime.length - 1];
+    const currentHistory = locustHistoryRef.current;
+    const lastPoint = currentHistory.responseTime[currentHistory.responseTime.length - 1];
     if (lastPoint && !hasSignificantChange(lastPoint, aggregatedStats)) {
       return;
     }
 
-    setLocustHistory(prevHistory => {
-      const newHistory = { ...prevHistory };
+    // Mutez directement les tableaux dans la référence
+    const newHistory = locustHistoryRef.current;
 
-      // Point de données pour les temps de réponse
-      const responseTimePoint = {
-        time: timestamp,
-        avg: Math.round(aggregatedStats.avg_response_time || 0),
-        median: Math.round(aggregatedStats.median_response_time || 0),
-        p95: Math.round(aggregatedStats['95%_response_time'] || 0),
-        min: Math.round(aggregatedStats.min_response_time || 0),
-        max: Math.round(aggregatedStats.max_response_time || 0)
-      };
+    // Point de données pour les temps de réponse
+    const responseTimePoint = {
+      time: timestamp,
+      avg: Math.round(aggregatedStats.avg_response_time || 0),
+      median: Math.round(aggregatedStats.median_response_time || 0),
+      p95: Math.round(aggregatedStats['95%_response_time'] || 0),
+      min: Math.round(aggregatedStats.min_response_time || 0),
+      max: Math.round(aggregatedStats.max_response_time || 0)
+    };
 
-      // Point de données pour le taux de requêtes
-      const requestsRatePoint = {
-        time: timestamp,
-        rps: Math.round((aggregatedStats.current_rps || 0) * 10) / 10,
-        totalRps: Math.round((aggregatedStats.total_rps || 0) * 10) / 10
-      };
+    // Point de données pour le taux de requêtes
+    const requestsRatePoint = {
+      time: timestamp,
+      rps: Math.round((aggregatedStats.current_rps || 0) * 10) / 10,
+      totalRps: Math.round((aggregatedStats.total_rps || 0) * 10) / 10
+    };
 
-      // Point de données pour les erreurs
-      const errorRatePoint = {
-        time: timestamp,
-        errorRate: aggregatedStats.num_requests > 0 ? 
-          Math.round((aggregatedStats.num_failures / aggregatedStats.num_requests) * 100 * 10) / 10 : 0,
-        failures: aggregatedStats.num_failures || 0,
-        requests: aggregatedStats.num_requests || 0
-      };
+    // Point de données pour les erreurs
+    const errorRatePoint = {
+      time: timestamp,
+      errorRate: aggregatedStats.num_requests > 0 ? 
+        Math.round((aggregatedStats.num_failures / aggregatedStats.num_requests) * 100 * 10) / 10 : 0,
+      failures: aggregatedStats.num_failures || 0,
+      requests: aggregatedStats.num_requests || 0
+    };
 
-      // Point de données pour les utilisateurs
-      const userCountPoint = {
-        time: timestamp,
-        users: dataToProcess.user_count || 0,
-        state: dataToProcess.state === 'running' ? 1 : 0
-      };
+    // Point de données pour les utilisateurs
+    const userCountPoint = {
+      time: timestamp,
+      users: dataToProcess.user_count || 0,
+      state: dataToProcess.state === 'running' ? 1 : 0
+    };
 
-      // Point de données pour le total des requêtes
-      const requestsTotalPoint = {
-        time: timestamp,
-        total: aggregatedStats.num_requests || 0,
-        successes: (aggregatedStats.num_requests || 0) - (aggregatedStats.num_failures || 0),
-        failures: aggregatedStats.num_failures || 0
-      };
+    // Point de données pour le total des requêtes
+    const requestsTotalPoint = {
+      time: timestamp,
+      total: aggregatedStats.num_requests || 0,
+      successes: (aggregatedStats.num_requests || 0) - (aggregatedStats.num_failures || 0),
+      failures: aggregatedStats.num_failures || 0
+    };
 
-      // Ajouter les nouveaux points et limiter la taille
-      newHistory.responseTime = limitDataPoints([...prevHistory.responseTime, responseTimePoint]);
-      newHistory.requestsRate = limitDataPoints([...prevHistory.requestsRate, requestsRatePoint]);
-      newHistory.errorRate = limitDataPoints([...prevHistory.errorRate, errorRatePoint]);
-      newHistory.userCount = limitDataPoints([...prevHistory.userCount, userCountPoint]);
-      newHistory.requestsTotal = limitDataPoints([...prevHistory.requestsTotal, requestsTotalPoint]);
-
-      return newHistory;
-    });
+    // Ajouter les nouveaux points et limiter la taille
+    newHistory.responseTime = limitDataPoints([...newHistory.responseTime, responseTimePoint]);
+    newHistory.requestsRate = limitDataPoints([...newHistory.requestsRate, requestsRatePoint]);
+    newHistory.errorRate = limitDataPoints([...newHistory.errorRate, errorRatePoint]);
+    newHistory.userCount = limitDataPoints([...newHistory.userCount, userCountPoint]);
+    newHistory.requestsTotal = limitDataPoints([...newHistory.requestsTotal, requestsTotalPoint]);
 
     // Mettre à jour les dernières données
     setLatestLocustData(dataToProcess);
     setLastUpdate(new Date());
     
+    // Forcez un re-rendu des graphiques en changeant la version
+    setHistoryVersion(v => v + 1);
+    
     // Nettoyer le buffer
     dataBufferRef.current.locust = null;
-  }, [limitDataPoints, hasSignificantChange, locustHistory.responseTime]);
+  }, [limitDataPoints, hasSignificantChange]);
 
-  // Accumulation des données Node Exporter avec throttling - LOGIQUE ORIGINALE RESTAURÉE
+  // Accumulation des données Node Exporter avec throttling et useRef
   const accumulateNodeData = useCallback((newData) => {
     if (!newData) return;
 
@@ -213,110 +217,110 @@ const Visualization = () => {
     const load5 = processMetricData(newData['node_load5']);
     const load15 = processMetricData(newData['node_load15']);
 
-    setNodeHistory(prev => {
-      const newHistory = { ...prev };
+    // Mutez directement les tableaux dans la référence
+    const newHistory = nodeHistoryRef.current;
 
-      // Calculs pour CPU
-      const calculateCpuUsage = () => {
-        if (!cpuData.length) return 0;
-        const totalUsage = cpuData.reduce((sum, cpu) => {
-          const value = parseFloat(cpu.value[1]);
-          return sum + (isNaN(value) ? 0 : value * 100);
-        }, 0);
-        return Math.round(totalUsage / cpuData.length);
+    // Calculs pour CPU
+    const calculateCpuUsage = () => {
+      if (!cpuData.length) return 0;
+      const totalUsage = cpuData.reduce((sum, cpu) => {
+        const value = parseFloat(cpu.value[1]);
+        return sum + (isNaN(value) ? 0 : value * 100);
+      }, 0);
+      return Math.round(totalUsage / cpuData.length);
+    };
+
+    // Calculs pour mémoire
+    const calculateMemoryUsage = () => {
+      if (!memoryTotal.length || !memoryAvailable.length) return { used: 0, total: 0, percentage: 0 };
+      const total = parseFloat(memoryTotal[0].value[1]);
+      const available = parseFloat(memoryAvailable[0].value[1]);
+      const used = total - available;
+      const percentage = Math.round((used / total) * 100);
+      return { 
+        used: Math.round(used / 1024 / 1024 / 1024), 
+        total: Math.round(total / 1024 / 1024 / 1024), 
+        percentage 
       };
+    };
 
-      // Calculs pour mémoire
-      const calculateMemoryUsage = () => {
-        if (!memoryTotal.length || !memoryAvailable.length) return { used: 0, total: 0, percentage: 0 };
-        const total = parseFloat(memoryTotal[0].value[1]);
-        const available = parseFloat(memoryAvailable[0].value[1]);
-        const used = total - available;
-        const percentage = Math.round((used / total) * 100);
-        return { 
-          used: Math.round(used / 1024 / 1024 / 1024), 
-          total: Math.round(total / 1024 / 1024 / 1024), 
-          percentage 
-        };
+    // Calculs pour disque
+    const calculateDiskUsage = () => {
+      if (!diskSize.length || !diskAvail.length) return { percentage: 0, used: 0, total: 0 };
+      const size = parseFloat(diskSize[0].value[1]);
+      const avail = diskAvail[0] ? parseFloat(diskAvail[0].value[1]) : 0;
+      const used = size - avail;
+      const percentage = size > 0 ? Math.round((used / size) * 100) : 0;
+      return {
+        used: Math.round(used / 1024 / 1024 / 1024),
+        total: Math.round(size / 1024 / 1024 / 1024),
+        percentage
       };
+    };
 
-      // Calculs pour disque
-      const calculateDiskUsage = () => {
-        if (!diskSize.length || !diskAvail.length) return { percentage: 0, used: 0, total: 0 };
-        const size = parseFloat(diskSize[0].value[1]);
-        const avail = diskAvail[0] ? parseFloat(diskAvail[0].value[1]) : 0;
-        const used = size - avail;
-        const percentage = size > 0 ? Math.round((used / size) * 100) : 0;
-        return {
-          used: Math.round(used / 1024 / 1024 / 1024),
-          total: Math.round(size / 1024 / 1024 / 1024),
-          percentage
-        };
-      };
+    // Calculs pour réseau
+    const calculateNetworkUsage = () => {
+      if (!networkRx.length || !networkTx.length) return { rx: 0, tx: 0 };
+      const rx = Math.round(parseFloat(networkRx[0].value[1]) / 1024 / 1024);
+      const tx = Math.round(parseFloat(networkTx[0].value[1]) / 1024 / 1024);
+      return { rx, tx };
+    };
 
-      // Calculs pour réseau
-      const calculateNetworkUsage = () => {
-        if (!networkRx.length || !networkTx.length) return { rx: 0, tx: 0 };
-        const rx = Math.round(parseFloat(networkRx[0].value[1]) / 1024 / 1024);
-        const tx = Math.round(parseFloat(networkTx[0].value[1]) / 1024 / 1024);
-        return { rx, tx };
-      };
+    const cpuUsage = calculateCpuUsage();
+    const memoryUsage = calculateMemoryUsage();
+    const diskUsage = calculateDiskUsage();
+    const networkUsage = calculateNetworkUsage();
 
-      const cpuUsage = calculateCpuUsage();
-      const memoryUsage = calculateMemoryUsage();
-      const diskUsage = calculateDiskUsage();
-      const networkUsage = calculateNetworkUsage();
+    // Points de données
+    const cpuPoint = {
+      time: timestamp,
+      usage: cpuUsage,
+      cores: cpuData.length
+    };
 
-      // Points de données
-      const cpuPoint = {
-        time: timestamp,
-        usage: cpuUsage,
-        cores: cpuData.length
-      };
+    const memoryPoint = {
+      time: timestamp,
+      used: memoryUsage.used,
+      total: memoryUsage.total,
+      percentage: memoryUsage.percentage,
+      available: memoryUsage.total - memoryUsage.used
+    };
 
-      const memoryPoint = {
-        time: timestamp,
-        used: memoryUsage.used,
-        total: memoryUsage.total,
-        percentage: memoryUsage.percentage,
-        available: memoryUsage.total - memoryUsage.used
-      };
+    const diskPoint = {
+      time: timestamp,
+      used: diskUsage.used,
+      total: diskUsage.total,
+      percentage: diskUsage.percentage,
+      available: diskUsage.total - diskUsage.used
+    };
 
-      const diskPoint = {
-        time: timestamp,
-        used: diskUsage.used,
-        total: diskUsage.total,
-        percentage: diskUsage.percentage,
-        available: diskUsage.total - diskUsage.used
-      };
+    const networkPoint = {
+      time: timestamp,
+      rx: networkUsage.rx,
+      tx: networkUsage.tx,
+      total: networkUsage.rx + networkUsage.tx
+    };
 
-      const networkPoint = {
-        time: timestamp,
-        rx: networkUsage.rx,
-        tx: networkUsage.tx,
-        total: networkUsage.rx + networkUsage.tx
-      };
+    const loadPoint = {
+      time: timestamp,
+      load1: load1.length ? Math.round(parseFloat(load1[0].value[1]) * 100) / 100 : 0,
+      load5: load5.length ? Math.round(parseFloat(load5[0].value[1]) * 100) / 100 : 0,
+      load15: load15.length ? Math.round(parseFloat(load15[0].value[1]) * 100) / 100 : 0
+    };
 
-      const loadPoint = {
-        time: timestamp,
-        load1: load1.length ? Math.round(parseFloat(load1[0].value[1]) * 100) / 100 : 0,
-        load5: load5.length ? Math.round(parseFloat(load5[0].value[1]) * 100) / 100 : 0,
-        load15: load15.length ? Math.round(parseFloat(load15[0].value[1]) * 100) / 100 : 0
-      };
-
-      // Ajouter les nouveaux points et limiter la taille
-      newHistory.cpu = limitDataPoints([...prev.cpu, cpuPoint]);
-      newHistory.memory = limitDataPoints([...prev.memory, memoryPoint]);
-      newHistory.disk = limitDataPoints([...prev.disk, diskPoint]);
-      newHistory.network = limitDataPoints([...prev.network, networkPoint]);
-      newHistory.load = limitDataPoints([...prev.load, loadPoint]);
-
-      return newHistory;
-    });
+    // Ajouter les nouveaux points et limiter la taille
+    newHistory.cpu = limitDataPoints([...newHistory.cpu, cpuPoint]);
+    newHistory.memory = limitDataPoints([...newHistory.memory, memoryPoint]);
+    newHistory.disk = limitDataPoints([...newHistory.disk, diskPoint]);
+    newHistory.network = limitDataPoints([...newHistory.network, networkPoint]);
+    newHistory.load = limitDataPoints([...newHistory.load, loadPoint]);
 
     // Mettre à jour les dernières données
     setLatestNodeData(newData);
     setLastUpdate(new Date());
+    
+    // Forcez un re-rendu des graphiques en changeant la version
+    setHistoryVersion(v => v + 1);
   }, [limitDataPoints]);
 
   // ===================================================================
@@ -353,7 +357,7 @@ const Visualization = () => {
     }
   }, [accumulateLocustData]);
 
-  // Fonction pour récupérer les données Node Exporter via Prometheus - LOGIQUE ORIGINALE RESTAURÉE
+  // Fonction pour récupérer les données Node Exporter via Prometheus
   const fetchNodeData = useCallback(async () => {
     try {
       const queries = [
@@ -407,26 +411,32 @@ const Visualization = () => {
     }
   }, [isTestRunning, fetchLocustData, fetchNodeData]);
 
-  // Fonction pour vider l'historique
+  // Fonction pour vider l'historique avec useRef
   const clearHistory = useCallback(() => {
-    setLocustHistory({
+    // Réinitialisez les références
+    locustHistoryRef.current = {
       responseTime: [],
       requestsRate: [],
       errorRate: [],
       userCount: [],
       requestsTotal: [],
       failuresTotal: []
-    });
-    setNodeHistory({
+    };
+    nodeHistoryRef.current = {
       cpu: [],
       memory: [],
       disk: [],
       network: [],
       load: []
-    });
+    };
+    
+    // Réinitialisez les autres états
     setLatestLocustData(null);
     setLatestNodeData(null);
     setLastUpdate(null);
+    
+    // Forcez le re-rendu pour afficher les graphiques vides
+    setHistoryVersion(v => v + 1);
     
     // Nettoyer les buffers
     dataBufferRef.current = { locust: null, node: null };
@@ -475,8 +485,6 @@ const Visualization = () => {
   }, []);
 
   // Mémoriser les données pour éviter les re-rendus inutiles
-  const memoizedLocustHistory = useMemo(() => locustHistory, [locustHistory]);
-  const memoizedNodeHistory = useMemo(() => nodeHistory, [nodeHistory]);
   const memoizedLatestLocustData = useMemo(() => latestLocustData, [latestLocustData]);
   const memoizedLatestNodeData = useMemo(() => latestNodeData, [latestNodeData]);
 
@@ -583,11 +591,11 @@ const Visualization = () => {
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Points temps réponse:</span>
-              <span className="font-medium ml-2">{memoizedLocustHistory.responseTime.length}</span>
+              <span className="font-medium ml-2">{locustHistoryRef.current.responseTime.length}</span>
             </div>
             <div>
               <span className="text-gray-500">Points utilisateurs:</span>
-              <span className="font-medium ml-2">{memoizedLocustHistory.userCount.length}</span>
+              <span className="font-medium ml-2">{locustHistoryRef.current.userCount.length}</span>
             </div>
           </div>
         </div>
@@ -597,21 +605,22 @@ const Visualization = () => {
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Points CPU:</span>
-              <span className="font-medium ml-2">{memoizedNodeHistory.cpu.length}</span>
+              <span className="font-medium ml-2">{nodeHistoryRef.current.cpu.length}</span>
             </div>
             <div>
               <span className="text-gray-500">Points mémoire:</span>
-              <span className="font-medium ml-2">{memoizedNodeHistory.memory.length}</span>
+              <span className="font-medium ml-2">{nodeHistoryRef.current.memory.length}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Contenu des graphiques */}
+      {/* Contenu des graphiques avec nouvelles props */}
       <div className="space-y-6">
         {activeSection === 'locust' && (
           <LocustMetricsCharts 
-            history={memoizedLocustHistory}
+            historyRef={locustHistoryRef}
+            historyVersion={historyVersion}
             latestData={memoizedLatestLocustData}
             loading={loading}
           />
@@ -619,7 +628,8 @@ const Visualization = () => {
         
         {activeSection === 'node' && (
           <NodeExporterCharts 
-            history={memoizedNodeHistory}
+            historyRef={nodeHistoryRef}
+            historyVersion={historyVersion}
             latestData={memoizedLatestNodeData}
             loading={loading}
           />
