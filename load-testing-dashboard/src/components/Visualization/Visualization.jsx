@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   ChartBarIcon,
   ArrowPathIcon,
   EyeIcon,
   EyeSlashIcon,
   CpuChipIcon,
-  ServerIcon
+  ServerIcon,
+  TrashIcon
 } from '@heroicons/react/24/outline';
 import { metricsService } from '../../services/api';
 import { useWebSocket } from '../../hooks/useWebSocket';
@@ -13,15 +14,43 @@ import LoadingSpinner from '../Common/LoadingSpinner';
 import LocustMetricsCharts from './LocustMetricsCharts';
 import NodeExporterCharts from './NodeExporterCharts';
 
+// Nombre maximum de points de données à conserver dans les graphiques pour la performance
+const MAX_DATA_POINTS = 100; // par minutes avant de rafraîchir
+
 const Visualization = () => {
   const [activeSection, setActiveSection] = useState('locust');
-  const [locustData, setLocustData] = useState(null);
-  const [nodeData, setNodeData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [isTestRunning, setIsTestRunning] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(null);
+
+  // ===================================================================
+  //                    HISTORIQUE DES DONNÉES CENTRALISÉ
+  // ===================================================================
+  
+  // Historique Locust - accumulé au fil du temps
+  const [locustHistory, setLocustHistory] = useState({
+    responseTime: [],
+    requestsRate: [],
+    errorRate: [],
+    userCount: [],
+    requestsTotal: [],
+    failuresTotal: []
+  });
+
+  // Historique Node Exporter - accumulé au fil du temps
+  const [nodeHistory, setNodeHistory] = useState({
+    cpu: [],
+    memory: [],
+    disk: [],
+    network: [],
+    load: []
+  });
+
+  // Dernières données reçues (pour les métriques instantanées)
+  const [latestLocustData, setLatestLocustData] = useState(null);
+  const [latestNodeData, setLatestNodeData] = useState(null);
 
   const sections = [
     {
@@ -40,10 +69,226 @@ const Visualization = () => {
     }
   ];
 
+  // ===================================================================
+  //                    FONCTIONS D'ACCUMULATION DES DONNÉES
+  // ===================================================================
+
+  // Fonction utilitaire pour limiter la taille des tableaux
+  const limitDataPoints = useCallback((dataArray) => {
+    return dataArray.slice(-MAX_DATA_POINTS);
+  }, []);
+
+  // Accumulation des données Locust
+  const accumulateLocustData = useCallback((newData) => {
+    if (!newData || !newData.stats) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+    const aggregatedStats = newData.stats.find(stat => stat.name === 'Aggregated') || {};
+
+    setLocustHistory(prev => {
+      const newHistory = { ...prev };
+
+      // Point de données pour les temps de réponse
+      const responseTimePoint = {
+        time: timestamp,
+        avg: aggregatedStats.avg_response_time || 0,
+        median: aggregatedStats.median_response_time || 0,
+        p95: aggregatedStats['95%_response_time'] || 0,
+        min: aggregatedStats.min_response_time || 0,
+        max: aggregatedStats.max_response_time || 0
+      };
+
+      // Point de données pour le taux de requêtes
+      const requestsRatePoint = {
+        time: timestamp,
+        rps: aggregatedStats.current_rps || 0,
+        totalRps: aggregatedStats.total_rps || 0
+      };
+
+      // Point de données pour les erreurs
+      const errorRatePoint = {
+        time: timestamp,
+        errorRate: aggregatedStats.num_requests > 0 ? 
+          (aggregatedStats.num_failures / aggregatedStats.num_requests) * 100 : 0,
+        failures: aggregatedStats.num_failures || 0,
+        requests: aggregatedStats.num_requests || 0
+      };
+
+      // Point de données pour les utilisateurs
+      const userCountPoint = {
+        time: timestamp,
+        users: newData.user_count || 0,
+        state: newData.state === 'running' ? 1 : 0
+      };
+
+      // Point de données pour le total des requêtes
+      const requestsTotalPoint = {
+        time: timestamp,
+        total: aggregatedStats.num_requests || 0,
+        successes: (aggregatedStats.num_requests || 0) - (aggregatedStats.num_failures || 0),
+        failures: aggregatedStats.num_failures || 0
+      };
+
+      // Point de données pour les échecs
+      const failuresTotalPoint = {
+        time: timestamp,
+        failures: aggregatedStats.num_failures || 0,
+        rate: aggregatedStats.num_requests > 0 ? 
+          (aggregatedStats.num_failures / aggregatedStats.num_requests) * 100 : 0
+      };
+
+      // Ajouter les nouveaux points et limiter la taille
+      newHistory.responseTime = limitDataPoints([...prev.responseTime, responseTimePoint]);
+      newHistory.requestsRate = limitDataPoints([...prev.requestsRate, requestsRatePoint]);
+      newHistory.errorRate = limitDataPoints([...prev.errorRate, errorRatePoint]);
+      newHistory.userCount = limitDataPoints([...prev.userCount, userCountPoint]);
+      newHistory.requestsTotal = limitDataPoints([...prev.requestsTotal, requestsTotalPoint]);
+      newHistory.failuresTotal = limitDataPoints([...prev.failuresTotal, failuresTotalPoint]);
+
+      return newHistory;
+    });
+
+    // Mettre à jour les dernières données
+    setLatestLocustData(newData);
+    setLastUpdate(new Date());
+  }, [limitDataPoints]);
+
+  // Accumulation des données Node Exporter
+  const accumulateNodeData = useCallback((newData) => {
+    if (!newData) return;
+
+    const timestamp = new Date().toLocaleTimeString();
+
+    // Fonction utilitaire pour traiter les métriques Prometheus
+    const processMetricData = (metricData) => {
+      if (!metricData || !metricData.data || !metricData.data.result) return [];
+      return metricData.data.result;
+    };
+
+    const cpuData = processMetricData(newData['rate(node_cpu_seconds_total[5m])']);
+    const memoryTotal = processMetricData(newData['node_memory_MemTotal_bytes']);
+    const memoryAvailable = processMetricData(newData['node_memory_MemAvailable_bytes']);
+    const diskSize = processMetricData(newData['node_filesystem_size_bytes']);
+    const diskAvail = processMetricData(newData['node_filesystem_avail_bytes']);
+    const networkRx = processMetricData(newData['node_network_receive_bytes_total']);
+    const networkTx = processMetricData(newData['node_network_transmit_bytes_total']);
+    const load1 = processMetricData(newData['node_load1']);
+    const load5 = processMetricData(newData['node_load5']);
+    const load15 = processMetricData(newData['node_load15']);
+
+    setNodeHistory(prev => {
+      const newHistory = { ...prev };
+
+      // Calculs pour CPU
+      const calculateCpuUsage = () => {
+        if (!cpuData.length) return 0;
+        const totalUsage = cpuData.reduce((sum, cpu) => {
+          const value = parseFloat(cpu.value[1]);
+          return sum + (isNaN(value) ? 0 : value * 100);
+        }, 0);
+        return Math.round(totalUsage / cpuData.length);
+      };
+
+      // Calculs pour mémoire
+      const calculateMemoryUsage = () => {
+        if (!memoryTotal.length || !memoryAvailable.length) return { used: 0, total: 0, percentage: 0 };
+        const total = parseFloat(memoryTotal[0].value[1]);
+        const available = parseFloat(memoryAvailable[0].value[1]);
+        const used = total - available;
+        const percentage = Math.round((used / total) * 100);
+        return { 
+          used: Math.round(used / 1024 / 1024 / 1024), 
+          total: Math.round(total / 1024 / 1024 / 1024), 
+          percentage 
+        };
+      };
+
+      // Calculs pour disque
+      const calculateDiskUsage = () => {
+        if (!diskSize.length || !diskAvail.length) return { percentage: 0, used: 0, total: 0 };
+        const size = parseFloat(diskSize[0].value[1]);
+        const avail = diskAvail[0] ? parseFloat(diskAvail[0].value[1]) : 0;
+        const used = size - avail;
+        const percentage = size > 0 ? Math.round((used / size) * 100) : 0;
+        return {
+          used: Math.round(used / 1024 / 1024 / 1024),
+          total: Math.round(size / 1024 / 1024 / 1024),
+          percentage
+        };
+      };
+
+      // Calculs pour réseau
+      const calculateNetworkUsage = () => {
+        if (!networkRx.length || !networkTx.length) return { rx: 0, tx: 0 };
+        const rx = Math.round(parseFloat(networkRx[0].value[1]) / 1024 / 1024);
+        const tx = Math.round(parseFloat(networkTx[0].value[1]) / 1024 / 1024);
+        return { rx, tx };
+      };
+
+      const cpuUsage = calculateCpuUsage();
+      const memoryUsage = calculateMemoryUsage();
+      const diskUsage = calculateDiskUsage();
+      const networkUsage = calculateNetworkUsage();
+
+      // Points de données
+      const cpuPoint = {
+        time: timestamp,
+        usage: cpuUsage,
+        cores: cpuData.length
+      };
+
+      const memoryPoint = {
+        time: timestamp,
+        used: memoryUsage.used,
+        total: memoryUsage.total,
+        percentage: memoryUsage.percentage,
+        available: memoryUsage.total - memoryUsage.used
+      };
+
+      const diskPoint = {
+        time: timestamp,
+        used: diskUsage.used,
+        total: diskUsage.total,
+        percentage: diskUsage.percentage,
+        available: diskUsage.total - diskUsage.used
+      };
+
+      const networkPoint = {
+        time: timestamp,
+        rx: networkUsage.rx,
+        tx: networkUsage.tx,
+        total: networkUsage.rx + networkUsage.tx
+      };
+
+      const loadPoint = {
+        time: timestamp,
+        load1: load1.length ? parseFloat(load1[0].value[1]) : 0,
+        load5: load5.length ? parseFloat(load5[0].value[1]) : 0,
+        load15: load15.length ? parseFloat(load15[0].value[1]) : 0
+      };
+
+      // Ajouter les nouveaux points et limiter la taille
+      newHistory.cpu = limitDataPoints([...prev.cpu, cpuPoint]);
+      newHistory.memory = limitDataPoints([...prev.memory, memoryPoint]);
+      newHistory.disk = limitDataPoints([...prev.disk, diskPoint]);
+      newHistory.network = limitDataPoints([...prev.network, networkPoint]);
+      newHistory.load = limitDataPoints([...prev.load, loadPoint]);
+
+      return newHistory;
+    });
+
+    // Mettre à jour les dernières données
+    setLatestNodeData(newData);
+    setLastUpdate(new Date());
+  }, [limitDataPoints]);
+
+  // ===================================================================
+  //                    GESTION DES WEBSOCKETS ET API
+  // ===================================================================
+
   // Écouter les événements WebSocket pour les métriques Locust
   useWebSocket('stats_update', (data) => {
-    setLocustData(data.stats);
-    setLastUpdate(new Date());
+    accumulateLocustData(data.stats);
   });
 
   useWebSocket('test_started', () => {
@@ -60,11 +305,12 @@ const Visualization = () => {
     setIsTestRunning(false);
     setAutoRefresh(false);
   });
+
   // Fonction pour récupérer les données Locust
   const fetchLocustData = async () => {
     try {
       const data = await metricsService.getLocustMetrics();
-      setLocustData(data);
+      accumulateLocustData(data);
     } catch (error) {
       console.error('Erreur récupération métriques Locust:', error);
     }
@@ -100,7 +346,7 @@ const Visualization = () => {
           results[query] = null;
         }
       }
-      setNodeData(results);
+      accumulateNodeData(results);
     } catch (error) {
       console.error('Erreur récupération métriques Node:', error);
     }
@@ -115,13 +361,38 @@ const Visualization = () => {
         await fetchLocustData();
       }
       await fetchNodeData();
-      setLastUpdate(new Date());
     } catch (error) {
       console.error('Erreur récupération données:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  // Fonction pour vider l'historique
+  const clearHistory = () => {
+    setLocustHistory({
+      responseTime: [],
+      requestsRate: [],
+      errorRate: [],
+      userCount: [],
+      requestsTotal: [],
+      failuresTotal: []
+    });
+    setNodeHistory({
+      cpu: [],
+      memory: [],
+      disk: [],
+      network: [],
+      load: []
+    });
+    setLatestLocustData(null);
+    setLatestNodeData(null);
+    setLastUpdate(null);
+  };
+
+  // ===================================================================
+  //                    EFFETS ET GESTION DU CYCLE DE VIE
+  // ===================================================================
 
   // Effet pour le chargement initial
   useEffect(() => {
@@ -131,7 +402,7 @@ const Visualization = () => {
   // Effet pour l'auto-refresh des métriques Node uniquement
   useEffect(() => {
     if (autoRefresh) {
-      const interval = setInterval(fetchNodeData, 3000); // Refresh Node toutes les 3 secondes pour plus de fluidité
+      const interval = setInterval(fetchNodeData, 3000); // Refresh Node toutes les 3 secondes
       setRefreshInterval(interval);
       return () => {
         clearInterval(interval);
@@ -139,6 +410,10 @@ const Visualization = () => {
       };
     }
   }, [autoRefresh, isTestRunning]);
+
+  // ===================================================================
+  //                    GESTIONNAIRES D'ÉVÉNEMENTS
+  // ===================================================================
 
   const handleRefresh = () => {
     fetchAllData();
@@ -148,6 +423,10 @@ const Visualization = () => {
     setAutoRefresh(!autoRefresh);
   };
 
+  // ===================================================================
+  //                    RENDU DU COMPOSANT
+  // ===================================================================
+
   return (
     <div className="space-y-6">
       {/* En-tête */}
@@ -155,7 +434,7 @@ const Visualization = () => {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Visualisation des Métriques</h2>
           <p className="text-gray-600 mt-1">
-            Graphiques dynamiques des métriques Locust (WebSocket) et système en temps réel
+            Graphiques temporels avec historique accumulé ({MAX_DATA_POINTS} points max)
           </p>
         </div>
         
@@ -164,7 +443,7 @@ const Visualization = () => {
             <div className="flex items-center space-x-2 px-3 py-1 bg-success-50 rounded-full">
               <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
               <span className="text-sm font-medium text-success-700">
-                Données temps réel
+                Flux temps réel
               </span>
             </div>
           )}
@@ -177,8 +456,17 @@ const Visualization = () => {
           
           <div className="flex items-center space-x-2 text-sm text-gray-500">
             <div className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`}></div>
-            <span>{autoRefresh ? 'Temps réel' : 'Manuel'}</span>
+            <span>{autoRefresh ? 'Continu' : 'Manuel'}</span>
           </div>
+          
+          <button
+            onClick={clearHistory}
+            className="flex items-center space-x-2 px-3 py-1 rounded-md text-sm font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-colors"
+            title="Vider l'historique"
+          >
+            <TrashIcon className="h-4 w-4" />
+            <span>Vider</span>
+          </button>
           
           <button
             onClick={toggleAutoRefresh}
@@ -231,21 +519,52 @@ const Visualization = () => {
         })}
       </div>
 
+      {/* Statistiques de l'historique */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="card p-4">
+          <h4 className="font-medium text-gray-900 mb-2">Historique Locust</h4>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-gray-500">Points temps réponse:</span>
+              <span className="font-medium ml-2">{locustHistory.responseTime.length}</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Points utilisateurs:</span>
+              <span className="font-medium ml-2">{locustHistory.userCount.length}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="card p-4">
+          <h4 className="font-medium text-gray-900 mb-2">Historique Système</h4>
+          <div className="grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-gray-500">Points CPU:</span>
+              <span className="font-medium ml-2">{nodeHistory.cpu.length}</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Points mémoire:</span>
+              <span className="font-medium ml-2">{nodeHistory.memory.length}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Contenu des graphiques */}
       <div className="space-y-6">
         {activeSection === 'locust' && (
           <LocustMetricsCharts 
-            data={locustData} 
+            history={locustHistory}
+            latestData={latestLocustData}
             loading={loading}
-            onRefresh={fetchLocustData}
           />
         )}
         
         {activeSection === 'node' && (
           <NodeExporterCharts 
-            data={nodeData} 
+            history={nodeHistory}
+            latestData={latestNodeData}
             loading={loading}
-            onRefresh={fetchNodeData}
           />
         )}
       </div>
