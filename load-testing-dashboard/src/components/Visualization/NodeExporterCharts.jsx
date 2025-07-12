@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { memo } from 'react';
+import React, { useState, memo, useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -22,6 +21,23 @@ import {
 } from '@heroicons/react/24/outline';
 import MetricCard from '../Common/MetricCard';
 
+// Composant Tooltip personnalisé pour éviter les re-rendus
+const CustomTooltip = memo(({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
+        <p className="text-sm font-medium text-gray-900">{`Temps: ${label}`}</p>
+        {payload.map((entry, index) => (
+          <p key={index} className="text-sm" style={{ color: entry.color }}>
+            {`${entry.name}: ${entry.value}${entry.unit || ''}`}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+});
+
 const NodeExporterCharts = memo(({ history, latestData, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
     overview: true,
@@ -39,34 +55,8 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
     }));
   };
 
-  if (loading && !latestData) {
-    return (
-      <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {[...Array(4)].map((_, index) => (
-            <MetricCard key={index} loading={true} />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (!latestData && (!history || Object.values(history).every(arr => arr.length === 0))) {
-    return (
-      <div className="card text-center py-12">
-        <ServerIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-lg font-medium text-gray-900 mb-2">
-          Aucune donnée système disponible
-        </h3>
-        <p className="text-gray-500">
-          Vérifiez que Node Exporter est démarré pour voir les métriques temporelles s'accumuler
-        </p>
-      </div>
-    );
-  }
-
-  // Extraire les métriques actuelles des dernières données
-  const getCurrentMetrics = () => {
+  // Mémoriser les métriques actuelles pour éviter les recalculs
+  const currentMetrics = useMemo(() => {
     if (!latestData) return {};
 
     const processMetricData = (metricData) => {
@@ -108,9 +98,42 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
       load1: load1.length ? parseFloat(load1[0].value[1]).toFixed(2) : 0,
       networkCount: networkRx.filter(net => net.metric.device !== 'lo').length
     };
-  };
+  }, [latestData]);
 
-  const currentMetrics = getCurrentMetrics();
+  // Mémoriser les données des graphiques pour éviter les re-rendus
+  const chartData = useMemo(() => ({
+    cpu: history.cpu || [],
+    memory: history.memory || [],
+    disk: history.disk || [],
+    network: history.network || [],
+    load: history.load || []
+  }), [history]);
+
+  if (loading && !latestData) {
+    return (
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, index) => (
+            <MetricCard key={index} loading={true} />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (!latestData && (!history || Object.values(history).every(arr => arr.length === 0))) {
+    return (
+      <div className="card text-center py-12">
+        <ServerIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-lg font-medium text-gray-900 mb-2">
+          Aucune donnée système disponible
+        </h3>
+        <p className="text-gray-500">
+          Vérifiez que Node Exporter est démarré pour voir les métriques temporelles s'accumuler
+        </p>
+      </div>
+    );
+  }
 
   const ChartContainer = memo(({ title, children, chartId, dataCount = 0 }) => (
     <div className="card">
@@ -121,7 +144,7 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
         </div>
         <button
           onClick={() => toggleChart(chartId)}
-          className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+          className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
         >
           {visibleCharts[chartId] ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
         </button>
@@ -170,24 +193,22 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution de l'Utilisation CPU" 
         chartId="cpu"
-        dataCount={history.cpu?.length || 0}
+        dataCount={chartData.cpu.length}
       >
-        {history.cpu && history.cpu.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <LineChart data={history.cpu}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.cpu.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData.cpu} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis domain={[0, 100]} />
-              <Tooltip formatter={(value, name) => {
-                if (name === 'usage') return [`${value}%`, 'Utilisation CPU'];
-                return [value, name];
-              }} />
+              <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Line 
                 type="monotone" 
@@ -212,24 +233,22 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution de l'Utilisation Mémoire" 
         chartId="memory"
-        dataCount={history.memory?.length || 0}
+        dataCount={chartData.memory.length}
       >
-        {history.memory && history.memory.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <AreaChart data={history.memory}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.memory.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={chartData.memory} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis />
-              <Tooltip formatter={(value, name) => {
-                if (name === 'percentage') return [`${value}%`, 'Pourcentage'];
-                return [`${value} GB`, name === 'used' ? 'Utilisée' : name === 'available' ? 'Disponible' : 'Total'];
-              }} />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Area 
                 type="monotone" 
@@ -264,24 +283,22 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution de l'Utilisation Disque" 
         chartId="disk"
-        dataCount={history.disk?.length || 0}
+        dataCount={chartData.disk.length}
       >
-        {history.disk && history.disk.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <AreaChart data={history.disk}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.disk.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={chartData.disk} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis />
-              <Tooltip formatter={(value, name) => {
-                if (name === 'percentage') return [`${value}%`, 'Pourcentage'];
-                return [`${value} GB`, name === 'used' ? 'Utilisé' : name === 'available' ? 'Disponible' : 'Total'];
-              }} />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Area 
                 type="monotone" 
@@ -316,21 +333,22 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution du Trafic Réseau" 
         chartId="network"
-        dataCount={history.network?.length || 0}
+        dataCount={chartData.network.length}
       >
-        {history.network && history.network.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <AreaChart data={history.network}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.network.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={chartData.network} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis />
-              <Tooltip formatter={(value) => [`${value} MB`, 'Trafic']} />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Area 
                 type="monotone" 
@@ -365,21 +383,22 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution du Load Average" 
         chartId="load"
-        dataCount={history.load?.length || 0}
+        dataCount={chartData.load.length}
       >
-        {history.load && history.load.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <LineChart data={history.load}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.load.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData.load} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis />
-              <Tooltip />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Line 
                 type="monotone" 
@@ -471,28 +490,23 @@ const NodeExporterCharts = memo(({ history, latestData, loading }) => {
         <h4 className="text-lg font-medium text-gray-900 mb-4">Résumé de l'Historique Accumulé</h4>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
           <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <div className="text-lg font-bold text-gray-700">{history.cpu?.length || 0}</div>
+            <div className="text-lg font-bold text-gray-700">{chartData.cpu.length}</div>
             <div className="text-xs text-gray-600">Points CPU</div>
           </div>
           <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <div className="text-lg font-bold text-gray-700">{history.memory?.length || 0}</div>
+            <div className="text-lg font-bold text-gray-700">{chartData.memory.length}</div>
             <div className="text-xs text-gray-600">Points mémoire</div>
           </div>
           <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <div className="text-lg font-bold text-gray-700">{history.network?.length || 0}</div>
+            <div className="text-lg font-bold text-gray-700">{chartData.network.length}</div>
             <div className="text-xs text-gray-600">Points réseau</div>
           </div>
         </div>
       </div>
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Comparaison personnalisée pour éviter les re-rendus inutiles
-  return (
-    prevProps.loading === nextProps.loading &&
-    prevProps.history === nextProps.history &&
-    prevProps.latestData === nextProps.latestData
-  );
 });
+
+NodeExporterCharts.displayName = 'NodeExporterCharts';
 
 export default NodeExporterCharts;

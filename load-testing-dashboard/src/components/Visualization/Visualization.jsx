@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   ChartBarIcon,
   ArrowPathIcon,
@@ -15,7 +15,8 @@ import LocustMetricsCharts from './LocustMetricsCharts';
 import NodeExporterCharts from './NodeExporterCharts';
 
 // Nombre maximum de points de données à conserver dans les graphiques pour la performance
-const MAX_DATA_POINTS = 100; // par minutes avant de rafraîchir
+const MAX_DATA_POINTS = 200;
+const UPDATE_THROTTLE_MS = 2000; // Throttle les mises à jour à 2 secondes minimum
 
 const Visualization = () => {
   const [activeSection, setActiveSection] = useState('locust');
@@ -23,7 +24,11 @@ const Visualization = () => {
   const [lastUpdate, setLastUpdate] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [isTestRunning, setIsTestRunning] = useState(false);
-  const [refreshInterval, setRefreshInterval] = useState(null);
+  
+  // Refs pour éviter les re-créations inutiles
+  const refreshIntervalRef = useRef(null);
+  const lastUpdateTimeRef = useRef(0);
+  const dataBufferRef = useRef({ locust: null, node: null });
 
   // ===================================================================
   //                    HISTORIQUE DES DONNÉES CENTRALISÉ
@@ -51,12 +56,8 @@ const Visualization = () => {
   // Dernières données reçues (pour les métriques instantanées)
   const [latestLocustData, setLatestLocustData] = useState(null);
   const [latestNodeData, setLatestNodeData] = useState(null);
-  
-  // État pour éviter les re-rendus inutiles
-  const [lastLocustUpdate, setLastLocustUpdate] = useState(0);
-  const [lastNodeUpdate, setLastNodeUpdate] = useState(0);
 
-  const sections = [
+  const sections = useMemo(() => [
     {
       id: 'locust',
       name: 'Métriques Locust',
@@ -71,62 +72,83 @@ const Visualization = () => {
       icon: ServerIcon,
       color: 'text-blue-600'
     }
-  ];
+  ], []);
 
   // ===================================================================
   //                    FONCTIONS D'ACCUMULATION DES DONNÉES
   // ===================================================================
 
-  // Fonction utilitaire pour limiter la taille des tableaux
+  // Fonction utilitaire pour limiter la taille des tableaux avec optimisation
   const limitDataPoints = useCallback((dataArray) => {
+    if (dataArray.length <= MAX_DATA_POINTS) return dataArray;
+    // Garder les points les plus récents
     return dataArray.slice(-MAX_DATA_POINTS);
   }, []);
 
-  // Accumulation des données Locust
+  // Fonction pour vérifier si les données ont significativement changé
+  const hasSignificantChange = useCallback((oldData, newData, threshold = 0.1) => {
+    if (!oldData || !newData) return true;
+    
+    // Comparer quelques métriques clés pour éviter les mises à jour inutiles
+    const oldValue = oldData.avg_response_time || 0;
+    const newValue = newData.avg_response_time || 0;
+    
+    return Math.abs(oldValue - newValue) > threshold;
+  }, []);
+
+  // Accumulation des données Locust avec throttling
   const accumulateLocustData = useCallback((newData) => {
     if (!newData || !newData.stats) return;
 
     const now = Date.now();
-    // Éviter les mises à jour trop fréquentes (minimum 1 seconde)
-    if (now - lastLocustUpdate < 1000) return;
-    setLastLocustUpdate(now);
-    const timestamp = new Date().toLocaleTimeString();
-    const aggregatedStats = newData.stats.find(stat => stat.name === 'Aggregated') || {};
+    // Throttle les mises à jour
+    if (now - lastUpdateTimeRef.current < UPDATE_THROTTLE_MS) {
+      dataBufferRef.current.locust = newData;
+      return;
+    }
+
+    const dataToProcess = dataBufferRef.current.locust || newData;
+    lastUpdateTimeRef.current = now;
+    
+    const timestamp = new Date().toLocaleTimeString('fr-FR', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    });
+    
+    const aggregatedStats = dataToProcess.stats.find(stat => stat.name === 'Aggregated') || {};
+
+    // Vérifier si les données ont changé de manière significative
+    const lastPoint = locustHistory.responseTime[locustHistory.responseTime.length - 1];
+    if (lastPoint && !hasSignificantChange(lastPoint, aggregatedStats)) {
+      return;
+    }
 
     setLocustHistory(prevHistory => {
-      // Vérifier si les données ont vraiment changé
-      const lastPoint = prevHistory.responseTime[prevHistory.responseTime.length - 1];
-      const newAvgResponseTime = aggregatedStats.avg_response_time || 0;
-      
-      if (lastPoint && Math.abs(lastPoint.avg - newAvgResponseTime) < 0.1) {
-        // Pas de changement significatif, ne pas mettre à jour
-        return prevHistory;
-      }
-      
       const newHistory = { ...prevHistory };
 
       // Point de données pour les temps de réponse
       const responseTimePoint = {
         time: timestamp,
-        avg: aggregatedStats.avg_response_time || 0,
-        median: aggregatedStats.median_response_time || 0,
-        p95: aggregatedStats['95%_response_time'] || 0,
-        min: aggregatedStats.min_response_time || 0,
-        max: aggregatedStats.max_response_time || 0
+        avg: Math.round(aggregatedStats.avg_response_time || 0),
+        median: Math.round(aggregatedStats.median_response_time || 0),
+        p95: Math.round(aggregatedStats['95%_response_time'] || 0),
+        min: Math.round(aggregatedStats.min_response_time || 0),
+        max: Math.round(aggregatedStats.max_response_time || 0)
       };
 
       // Point de données pour le taux de requêtes
       const requestsRatePoint = {
         time: timestamp,
-        rps: aggregatedStats.current_rps || 0,
-        totalRps: aggregatedStats.total_rps || 0
+        rps: Math.round((aggregatedStats.current_rps || 0) * 10) / 10,
+        totalRps: Math.round((aggregatedStats.total_rps || 0) * 10) / 10
       };
 
       // Point de données pour les erreurs
       const errorRatePoint = {
         time: timestamp,
         errorRate: aggregatedStats.num_requests > 0 ? 
-          (aggregatedStats.num_failures / aggregatedStats.num_requests) * 100 : 0,
+          Math.round((aggregatedStats.num_failures / aggregatedStats.num_requests) * 100 * 10) / 10 : 0,
         failures: aggregatedStats.num_failures || 0,
         requests: aggregatedStats.num_requests || 0
       };
@@ -134,8 +156,8 @@ const Visualization = () => {
       // Point de données pour les utilisateurs
       const userCountPoint = {
         time: timestamp,
-        users: newData.user_count || 0,
-        state: newData.state === 'running' ? 1 : 0
+        users: dataToProcess.user_count || 0,
+        state: dataToProcess.state === 'running' ? 1 : 0
       };
 
       // Point de données pour le total des requêtes
@@ -146,35 +168,43 @@ const Visualization = () => {
         failures: aggregatedStats.num_failures || 0
       };
 
-      // Point de données pour les échecs
-      const failuresTotalPoint = {
-        time: timestamp,
-        failures: aggregatedStats.num_failures || 0,
-        rate: aggregatedStats.num_requests > 0 ? 
-          (aggregatedStats.num_failures / aggregatedStats.num_requests) * 100 : 0
-      };
-
       // Ajouter les nouveaux points et limiter la taille
       newHistory.responseTime = limitDataPoints([...prevHistory.responseTime, responseTimePoint]);
       newHistory.requestsRate = limitDataPoints([...prevHistory.requestsRate, requestsRatePoint]);
       newHistory.errorRate = limitDataPoints([...prevHistory.errorRate, errorRatePoint]);
       newHistory.userCount = limitDataPoints([...prevHistory.userCount, userCountPoint]);
       newHistory.requestsTotal = limitDataPoints([...prevHistory.requestsTotal, requestsTotalPoint]);
-      newHistory.failuresTotal = limitDataPoints([...prevHistory.failuresTotal, failuresTotalPoint]);
 
       return newHistory;
     });
 
     // Mettre à jour les dernières données
-    setLatestLocustData(newData);
+    setLatestLocustData(dataToProcess);
     setLastUpdate(new Date());
-  }, [limitDataPoints, lastLocustUpdate]);
+    
+    // Nettoyer le buffer
+    dataBufferRef.current.locust = null;
+  }, [limitDataPoints, hasSignificantChange, locustHistory.responseTime]);
 
-  // Accumulation des données Node Exporter
+  // Accumulation des données Node Exporter avec throttling
   const accumulateNodeData = useCallback((newData) => {
     if (!newData) return;
 
-    const timestamp = new Date().toLocaleTimeString();
+    const now = Date.now();
+    // Throttle les mises à jour
+    if (now - lastUpdateTimeRef.current < UPDATE_THROTTLE_MS) {
+      dataBufferRef.current.node = newData;
+      return;
+    }
+
+    const dataToProcess = dataBufferRef.current.node || newData;
+    lastUpdateTimeRef.current = now;
+
+    const timestamp = new Date().toLocaleTimeString('fr-FR', { 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    });
 
     // Fonction utilitaire pour traiter les métriques Prometheus
     const processMetricData = (metricData) => {
@@ -182,16 +212,16 @@ const Visualization = () => {
       return metricData.data.result;
     };
 
-    const cpuData = processMetricData(newData['rate(node_cpu_seconds_total[5m])']);
-    const memoryTotal = processMetricData(newData['node_memory_MemTotal_bytes']);
-    const memoryAvailable = processMetricData(newData['node_memory_MemAvailable_bytes']);
-    const diskSize = processMetricData(newData['node_filesystem_size_bytes']);
-    const diskAvail = processMetricData(newData['node_filesystem_avail_bytes']);
-    const networkRx = processMetricData(newData['node_network_receive_bytes_total']);
-    const networkTx = processMetricData(newData['node_network_transmit_bytes_total']);
-    const load1 = processMetricData(newData['node_load1']);
-    const load5 = processMetricData(newData['node_load5']);
-    const load15 = processMetricData(newData['node_load15']);
+    const cpuData = processMetricData(dataToProcess['rate(node_cpu_seconds_total[5m])']);
+    const memoryTotal = processMetricData(dataToProcess['node_memory_MemTotal_bytes']);
+    const memoryAvailable = processMetricData(dataToProcess['node_memory_MemAvailable_bytes']);
+    const diskSize = processMetricData(dataToProcess['node_filesystem_size_bytes']);
+    const diskAvail = processMetricData(dataToProcess['node_filesystem_avail_bytes']);
+    const networkRx = processMetricData(dataToProcess['node_network_receive_bytes_total']);
+    const networkTx = processMetricData(dataToProcess['node_network_transmit_bytes_total']);
+    const load1 = processMetricData(dataToProcess['node_load1']);
+    const load5 = processMetricData(dataToProcess['node_load5']);
+    const load15 = processMetricData(dataToProcess['node_load15']);
 
     setNodeHistory(prev => {
       const newHistory = { ...prev };
@@ -279,9 +309,9 @@ const Visualization = () => {
 
       const loadPoint = {
         time: timestamp,
-        load1: load1.length ? parseFloat(load1[0].value[1]) : 0,
-        load5: load5.length ? parseFloat(load5[0].value[1]) : 0,
-        load15: load15.length ? parseFloat(load15[0].value[1]) : 0
+        load1: load1.length ? Math.round(parseFloat(load1[0].value[1]) * 100) / 100 : 0,
+        load5: load5.length ? Math.round(parseFloat(load5[0].value[1]) * 100) / 100 : 0,
+        load15: load15.length ? Math.round(parseFloat(load15[0].value[1]) * 100) / 100 : 0
       };
 
       // Ajouter les nouveaux points et limiter la taille
@@ -295,8 +325,11 @@ const Visualization = () => {
     });
 
     // Mettre à jour les dernières données
-    setLatestNodeData(newData);
+    setLatestNodeData(dataToProcess);
     setLastUpdate(new Date());
+    
+    // Nettoyer le buffer
+    dataBufferRef.current.node = null;
   }, [limitDataPoints]);
 
   // ===================================================================
@@ -304,37 +337,37 @@ const Visualization = () => {
   // ===================================================================
 
   // Écouter les événements WebSocket pour les métriques Locust
-  useWebSocket('stats_update', (data) => {
+  useWebSocket('stats_update', useCallback((data) => {
     accumulateLocustData(data.stats);
-  });
+  }, [accumulateLocustData]));
 
-  useWebSocket('test_started', () => {
+  useWebSocket('test_started', useCallback(() => {
     setIsTestRunning(true);
     setAutoRefresh(true);
-  });
+  }, []));
 
-  useWebSocket('test_stopped', () => {
+  useWebSocket('test_stopped', useCallback(() => {
     setIsTestRunning(false);
     setAutoRefresh(false);
-  });
+  }, []));
 
-  useWebSocket('test_completed', () => {
+  useWebSocket('test_completed', useCallback(() => {
     setIsTestRunning(false);
     setAutoRefresh(false);
-  });
+  }, []));
 
   // Fonction pour récupérer les données Locust
-  const fetchLocustData = async () => {
+  const fetchLocustData = useCallback(async () => {
     try {
       const data = await metricsService.getLocustMetrics();
       accumulateLocustData(data);
     } catch (error) {
       console.error('Erreur récupération métriques Locust:', error);
     }
-  };
+  }, [accumulateLocustData]);
 
   // Fonction pour récupérer les données Node Exporter via Prometheus
-  const fetchNodeData = async () => {
+  const fetchNodeData = useCallback(async () => {
     try {
       const queries = [
         'up{job="node_exporter"}',
@@ -367,10 +400,10 @@ const Visualization = () => {
     } catch (error) {
       console.error('Erreur récupération métriques Node:', error);
     }
-  };
+  }, [accumulateNodeData]);
 
   // Fonction pour récupérer toutes les données
-  const fetchAllData = async () => {
+  const fetchAllData = useCallback(async () => {
     setLoading(true);
     try {
       // Récupérer les données Locust seulement si pas de test en cours (pour éviter les doublons avec WebSocket)
@@ -383,10 +416,10 @@ const Visualization = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [isTestRunning, fetchLocustData, fetchNodeData]);
 
   // Fonction pour vider l'historique
-  const clearHistory = () => {
+  const clearHistory = useCallback(() => {
     setLocustHistory({
       responseTime: [],
       requestsRate: [],
@@ -405,7 +438,10 @@ const Visualization = () => {
     setLatestLocustData(null);
     setLatestNodeData(null);
     setLastUpdate(null);
-  };
+    
+    // Nettoyer les buffers
+    dataBufferRef.current = { locust: null, node: null };
+  }, []);
 
   // ===================================================================
   //                    EFFETS ET GESTION DU CYCLE DE VIE
@@ -414,31 +450,46 @@ const Visualization = () => {
   // Effet pour le chargement initial
   useEffect(() => {
     fetchAllData();
-  }, []);
+  }, [fetchAllData]);
 
   // Effet pour l'auto-refresh des métriques Node uniquement
   useEffect(() => {
     if (autoRefresh) {
-      const interval = setInterval(fetchNodeData, 3000); // Refresh Node toutes les 3 secondes
-      setRefreshInterval(interval);
+      const interval = setInterval(fetchNodeData, 5000); // Refresh Node toutes les 5 secondes
+      refreshIntervalRef.current = interval;
       return () => {
         clearInterval(interval);
-        setRefreshInterval(null);
+        refreshIntervalRef.current = null;
       };
     }
-  }, [autoRefresh, isTestRunning]);
+  }, [autoRefresh, fetchNodeData]);
+
+  // Nettoyage lors du démontage
+  useEffect(() => {
+    return () => {
+      if (refreshIntervalRef.current) {
+        clearInterval(refreshIntervalRef.current);
+      }
+    };
+  }, []);
 
   // ===================================================================
   //                    GESTIONNAIRES D'ÉVÉNEMENTS
   // ===================================================================
 
-  const handleRefresh = () => {
+  const handleRefresh = useCallback(() => {
     fetchAllData();
-  };
+  }, [fetchAllData]);
 
-  const toggleAutoRefresh = () => {
-    setAutoRefresh(!autoRefresh);
-  };
+  const toggleAutoRefresh = useCallback(() => {
+    setAutoRefresh(prev => !prev);
+  }, []);
+
+  // Mémoriser les données pour éviter les re-rendus inutiles
+  const memoizedLocustHistory = useMemo(() => locustHistory, [locustHistory]);
+  const memoizedNodeHistory = useMemo(() => nodeHistory, [nodeHistory]);
+  const memoizedLatestLocustData = useMemo(() => latestLocustData, [latestLocustData]);
+  const memoizedLatestNodeData = useMemo(() => latestNodeData, [latestNodeData]);
 
   // ===================================================================
   //                    RENDU DU COMPOSANT
@@ -543,11 +594,11 @@ const Visualization = () => {
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Points temps réponse:</span>
-              <span className="font-medium ml-2">{locustHistory.responseTime.length}</span>
+              <span className="font-medium ml-2">{memoizedLocustHistory.responseTime.length}</span>
             </div>
             <div>
               <span className="text-gray-500">Points utilisateurs:</span>
-              <span className="font-medium ml-2">{locustHistory.userCount.length}</span>
+              <span className="font-medium ml-2">{memoizedLocustHistory.userCount.length}</span>
             </div>
           </div>
         </div>
@@ -557,11 +608,11 @@ const Visualization = () => {
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Points CPU:</span>
-              <span className="font-medium ml-2">{nodeHistory.cpu.length}</span>
+              <span className="font-medium ml-2">{memoizedNodeHistory.cpu.length}</span>
             </div>
             <div>
               <span className="text-gray-500">Points mémoire:</span>
-              <span className="font-medium ml-2">{nodeHistory.memory.length}</span>
+              <span className="font-medium ml-2">{memoizedNodeHistory.memory.length}</span>
             </div>
           </div>
         </div>
@@ -571,16 +622,16 @@ const Visualization = () => {
       <div className="space-y-6">
         {activeSection === 'locust' && (
           <LocustMetricsCharts 
-            history={locustHistory}
-            latestData={latestLocustData}
+            history={memoizedLocustHistory}
+            latestData={memoizedLatestLocustData}
             loading={loading}
           />
         )}
         
         {activeSection === 'node' && (
           <NodeExporterCharts 
-            history={nodeHistory}
-            latestData={latestNodeData}
+            history={memoizedNodeHistory}
+            latestData={memoizedLatestNodeData}
             loading={loading}
           />
         )}

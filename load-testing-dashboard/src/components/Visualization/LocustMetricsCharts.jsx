@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { memo } from 'react';
+import React, { useState, memo, useMemo } from 'react';
 import {
   LineChart,
   Line,
@@ -22,6 +21,23 @@ import {
 } from '@heroicons/react/24/outline';
 import MetricCard from '../Common/MetricCard';
 
+// Composant Tooltip personnalisé pour éviter les re-rendus
+const CustomTooltip = memo(({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
+        <p className="text-sm font-medium text-gray-900">{`Temps: ${label}`}</p>
+        {payload.map((entry, index) => (
+          <p key={index} className="text-sm" style={{ color: entry.color }}>
+            {`${entry.name}: ${entry.value}`}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+});
+
 const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
     overview: true,
@@ -38,6 +54,21 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
       [chartId]: !prev[chartId]
     }));
   };
+
+  // Mémoriser les métriques actuelles pour éviter les recalculs
+  const currentMetrics = useMemo(() => {
+    if (!latestData || !latestData.stats) return {};
+    return latestData.stats.find(stat => stat.name === 'Aggregated') || {};
+  }, [latestData]);
+
+  // Mémoriser les données des graphiques pour éviter les re-rendus
+  const chartData = useMemo(() => ({
+    responseTime: history.responseTime || [],
+    requestsRate: history.requestsRate || [],
+    errorRate: history.errorRate || [],
+    userCount: history.userCount || [],
+    requestsTotal: history.requestsTotal || []
+  }), [history]);
 
   if (loading && !latestData) {
     return (
@@ -65,14 +96,6 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
     );
   }
 
-  // Extraire les métriques actuelles des dernières données
-  const getCurrentMetrics = () => {
-    if (!latestData || !latestData.stats) return {};
-    return latestData.stats.find(stat => stat.name === 'Aggregated') || {};
-  };
-
-  const aggregatedStats = getCurrentMetrics();
-
   const ChartContainer = memo(({ title, children, chartId, dataCount = 0 }) => (
     <div className="card">
       <div className="flex items-center justify-between mb-4">
@@ -82,7 +105,7 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
         </div>
         <button
           onClick={() => toggleChart(chartId)}
-          className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+          className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors"
         >
           {visibleCharts[chartId] ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
         </button>
@@ -98,14 +121,14 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard
             title="Temps de réponse moyen"
-            value={aggregatedStats.avg_response_time ? Math.round(aggregatedStats.avg_response_time) : 0}
+            value={currentMetrics.avg_response_time ? Math.round(currentMetrics.avg_response_time) : 0}
             unit="ms"
             icon={ClockIcon}
             color="primary"
           />
           <MetricCard
             title="Requêtes par seconde"
-            value={aggregatedStats.current_rps ? Math.round(aggregatedStats.current_rps * 10) / 10 : 0}
+            value={currentMetrics.current_rps ? Math.round(currentMetrics.current_rps * 10) / 10 : 0}
             unit="req/s"
             icon={ChartBarIcon}
             color="success"
@@ -119,11 +142,11 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
           />
           <MetricCard
             title="Taux d'erreur"
-            value={aggregatedStats.num_requests ? 
-              Math.round((aggregatedStats.num_failures / aggregatedStats.num_requests) * 100 * 10) / 10 : 0}
+            value={currentMetrics.num_requests ? 
+              Math.round((currentMetrics.num_failures / currentMetrics.num_requests) * 100 * 10) / 10 : 0}
             unit="%"
             icon={ExclamationTriangleIcon}
-            color={aggregatedStats.num_failures > 0 ? 'error' : 'success'}
+            color={currentMetrics.num_failures > 0 ? 'error' : 'success'}
           />
         </div>
       )}
@@ -132,21 +155,22 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution des Temps de Réponse" 
         chartId="responseTime"
-        dataCount={history.responseTime?.length || 0}
+        dataCount={chartData.responseTime.length}
       >
-        {history.responseTime && history.responseTime.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <LineChart data={history.responseTime}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.responseTime.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData.responseTime} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis />
-              <Tooltip />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Line 
                 type="monotone" 
@@ -191,21 +215,22 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution du Taux de Requêtes" 
         chartId="requestsRate"
-        dataCount={history.requestsRate?.length || 0}
+        dataCount={chartData.requestsRate.length}
       >
-        {history.requestsRate && history.requestsRate.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <AreaChart data={history.requestsRate}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.requestsRate.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={chartData.requestsRate} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis />
-              <Tooltip />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Area 
                 type="monotone" 
@@ -240,22 +265,23 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution des Erreurs" 
         chartId="errors"
-        dataCount={history.errorRate?.length || 0}
+        dataCount={chartData.errorRate.length}
       >
-        {history.errorRate && history.errorRate.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <LineChart data={history.errorRate}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.errorRate.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData.errorRate} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis yAxisId="left" />
-              <YAxis yAxisId="right" orientation="right" />
-              <Tooltip />
+              <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
+              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Line 
                 yAxisId="left"
@@ -292,21 +318,22 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution du Volume de Requêtes" 
         chartId="distribution"
-        dataCount={history.requestsTotal?.length || 0}
+        dataCount={chartData.requestsTotal.length}
       >
-        {history.requestsTotal && history.requestsTotal.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <AreaChart data={history.requestsTotal}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.requestsTotal.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <AreaChart data={chartData.requestsTotal} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis />
-              <Tooltip />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Area 
                 type="monotone" 
@@ -341,21 +368,22 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
       <ChartContainer 
         title="Évolution des Utilisateurs Actifs" 
         chartId="users"
-        dataCount={history.userCount?.length || 0}
+        dataCount={chartData.userCount.length}
       >
-        {history.userCount && history.userCount.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300} debounce={100}>
-            <LineChart data={history.userCount}>
-              <CartesianGrid strokeDasharray="3 3" />
+        {chartData.userCount.length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData.userCount} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis 
                 dataKey="time" 
                 angle={-45} 
                 textAnchor="end" 
                 height={80}
                 interval="preserveStartEnd"
+                tick={{ fontSize: 12 }}
               />
-              <YAxis />
-              <Tooltip />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip content={<CustomTooltip />} />
               <Legend />
               <Line 
                 type="monotone" 
@@ -384,25 +412,25 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
             <div>
               <p className="text-gray-500">Total requêtes</p>
               <p className="font-semibold text-gray-900">
-                {aggregatedStats.num_requests?.toLocaleString() || 0}
+                {currentMetrics.num_requests?.toLocaleString() || 0}
               </p>
             </div>
             <div>
               <p className="text-gray-500">Min réponse</p>
               <p className="font-semibold text-gray-900">
-                {aggregatedStats.min_response_time || 0} ms
+                {currentMetrics.min_response_time || 0} ms
               </p>
             </div>
             <div>
               <p className="text-gray-500">Max réponse</p>
               <p className="font-semibold text-gray-900">
-                {aggregatedStats.max_response_time || 0} ms
+                {currentMetrics.max_response_time || 0} ms
               </p>
             </div>
             <div>
               <p className="text-gray-500">95e centile</p>
               <p className="font-semibold text-gray-900">
-                {aggregatedStats['95%_response_time'] || 0} ms
+                {currentMetrics['95%_response_time'] || 0} ms
               </p>
             </div>
           </div>
@@ -418,7 +446,7 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
             </div>
             <div className="text-center p-4 bg-purple-50 rounded-lg">
               <div className="text-2xl font-bold text-purple-600">
-                {aggregatedStats.total_rps ? Math.round(aggregatedStats.total_rps * 10) / 10 : 0}
+                {currentMetrics.total_rps ? Math.round(currentMetrics.total_rps * 10) / 10 : 0}
               </div>
               <div className="text-sm text-purple-800">RPS Total</div>
             </div>
@@ -431,28 +459,23 @@ const LocustMetricsCharts = memo(({ history, latestData, loading }) => {
         <h4 className="text-lg font-medium text-gray-900 mb-4">Résumé de l'Historique Accumulé</h4>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
           <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <div className="text-lg font-bold text-gray-700">{history.responseTime?.length || 0}</div>
+            <div className="text-lg font-bold text-gray-700">{chartData.responseTime.length}</div>
             <div className="text-xs text-gray-600">Points temps réponse</div>
           </div>
           <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <div className="text-lg font-bold text-gray-700">{history.requestsRate?.length || 0}</div>
+            <div className="text-lg font-bold text-gray-700">{chartData.requestsRate.length}</div>
             <div className="text-xs text-gray-600">Points taux requêtes</div>
           </div>
           <div className="text-center p-3 bg-gray-50 rounded-lg">
-            <div className="text-lg font-bold text-gray-700">{history.userCount?.length || 0}</div>
+            <div className="text-lg font-bold text-gray-700">{chartData.userCount.length}</div>
             <div className="text-xs text-gray-600">Points utilisateurs</div>
           </div>
         </div>
       </div>
     </div>
   );
-}, (prevProps, nextProps) => {
-  // Comparaison personnalisée pour éviter les re-rendus inutiles
-  return (
-    prevProps.loading === nextProps.loading &&
-    prevProps.history === nextProps.history &&
-    prevProps.latestData === nextProps.latestData
-  );
 });
+
+LocustMetricsCharts.displayName = 'LocustMetricsCharts';
 
 export default LocustMetricsCharts;
