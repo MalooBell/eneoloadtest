@@ -103,7 +103,7 @@ const Visualization = () => {
         return prevHistory;
       }
       
-      const newHistory = { ...prev };
+      const newHistory = { ...prevHistory };
 
       // Point de données pour les temps de réponse
       const responseTimePoint = {
@@ -155,12 +155,12 @@ const Visualization = () => {
       };
 
       // Ajouter les nouveaux points et limiter la taille
-      newHistory.responseTime = limitDataPoints([...prev.responseTime, responseTimePoint]);
-      newHistory.requestsRate = limitDataPoints([...prev.requestsRate, requestsRatePoint]);
-      newHistory.errorRate = limitDataPoints([...prev.errorRate, errorRatePoint]);
-      newHistory.userCount = limitDataPoints([...prev.userCount, userCountPoint]);
-      newHistory.requestsTotal = limitDataPoints([...prev.requestsTotal, requestsTotalPoint]);
-      newHistory.failuresTotal = limitDataPoints([...prev.failuresTotal, failuresTotalPoint]);
+      newHistory.responseTime = limitDataPoints([...prevHistory.responseTime, responseTimePoint]);
+      newHistory.requestsRate = limitDataPoints([...prevHistory.requestsRate, requestsRatePoint]);
+      newHistory.errorRate = limitDataPoints([...prevHistory.errorRate, errorRatePoint]);
+      newHistory.userCount = limitDataPoints([...prevHistory.userCount, userCountPoint]);
+      newHistory.requestsTotal = limitDataPoints([...prevHistory.requestsTotal, requestsTotalPoint]);
+      newHistory.failuresTotal = limitDataPoints([...prevHistory.failuresTotal, failuresTotalPoint]);
 
       return newHistory;
     });
@@ -168,7 +168,7 @@ const Visualization = () => {
     // Mettre à jour les dernières données
     setLatestLocustData(newData);
     setLastUpdate(new Date());
-  }, [limitDataPoints]);
+  }, [limitDataPoints, lastLocustUpdate]);
 
   // Accumulation des données Node Exporter
   const accumulateNodeData = useCallback((newData) => {
