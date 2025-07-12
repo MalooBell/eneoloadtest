@@ -12,7 +12,7 @@ import { testService } from '../../services/api';
 import LoadingSpinner from '../Common/LoadingSpinner';
 import { cn } from '../../utils/cn';
 
-const TestHistory = () => {
+const TestHistory = ({ onNavigateToVisualization, isTestRunning }) => {
   const [tests, setTests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedTest, setSelectedTest] = useState(null);
@@ -60,15 +60,14 @@ const TestHistory = () => {
     return `${minutes}m ${seconds}s`;
   };
 
-  const openInGrafana = (test) => {
-    if (!test.start_time) return;
+  const handleViewVisualization = (test) => {
+    if (isTestRunning) {
+      alert('Impossible de voir les données historiques pendant qu\'un test est en cours. Arrêtez le test actuel d\'abord.');
+      return;
+    }
     
-    const startTime = new Date(test.start_time).getTime();
-    // Utilise l'heure de fin si elle existe, sinon l'heure actuelle
-    const endTime = test.end_time ? new Date(test.end_time).getTime() : Date.now();
-    
-    const grafanaUrl = `http://localhost:3000/d/locust-dashboard?from=${startTime}&to=${endTime}`;
-    window.open(grafanaUrl, '_blank');
+    // Naviguer vers la page visualisation
+    onNavigateToVisualization();
   };
 
   if (loading) {
@@ -102,12 +101,23 @@ const TestHistory = () => {
           </p>
         </div>
         
+        <div className="flex items-center space-x-3">
+          {isTestRunning && (
+            <div className="flex items-center space-x-2 px-3 py-1 bg-warning-50 rounded-full">
+              <div className="w-2 h-2 bg-warning-500 rounded-full animate-pulse"></div>
+              <span className="text-sm font-medium text-warning-700">
+                Test en cours - Visualisation historique désactivée
+              </span>
+            </div>
+          )}
+          
         <button
           onClick={loadTestHistory}
           className="btn-outline"
         >
           Actualiser
         </button>
+        </div>
       </div>
 
       {/* Liste des tests */}
@@ -201,7 +211,9 @@ const TestHistory = () => {
                         </button>
                         
                         <button
-                          onClick={() => setSelectedTest(test)}
+                          onClick={() => handleViewVisualization(test)}
+                            'text-purple-600 hover:text-purple-900',
+                            isTestRunning && 'opacity-50 cursor-not-allowed'
                           className="text-purple-600 hover:text-purple-900"
                           title="Voir les graphiques"
                         >
@@ -274,7 +286,11 @@ const TestHistory = () => {
             
             <div className="p-4 bg-gray-50 border-t flex justify-end space-x-3">
               <button
-                onClick={() => setSelectedTest(null)}
+                onClick={() => {
+                  setSelectedTest(null);
+                  handleViewVisualization(selectedTest);
+                }}
+                disabled={isTestRunning}
                 className="btn-primary"
               >
                 <PresentationChartLineIcon className="h-4 w-4 mr-2" />

@@ -121,7 +121,12 @@ function App() {
         return <Visualization />;
       
       case 'history':
-        return <TestHistory />;
+        return (
+          <TestHistory 
+            onNavigateToVisualization={() => setCurrentTab('visualization')}
+            isTestRunning={isTestRunning}
+          />
+        );
       
       default:
         return <div>Onglet non trouvé</div>;

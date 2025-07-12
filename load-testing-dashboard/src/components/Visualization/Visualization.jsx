@@ -8,6 +8,7 @@ import {
   ServerIcon
 } from '@heroicons/react/24/outline';
 import { metricsService } from '../../services/api';
+import { useWebSocket } from '../../hooks/useWebSocket';
 import LoadingSpinner from '../Common/LoadingSpinner';
 import LocustMetricsCharts from './LocustMetricsCharts';
 import NodeExporterCharts from './NodeExporterCharts';
@@ -18,8 +19,8 @@ const Visualization = () => {
   const [nodeData, setNodeData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const [refreshInterval, setRefreshInterval] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [isTestRunning, setIsTestRunning] = useState(false);
 
   const sections = [
     {
@@ -38,6 +39,26 @@ const Visualization = () => {
     }
   ];
 
+  // Écouter les événements WebSocket pour les métriques Locust
+  useWebSocket('stats_update', (data) => {
+    setLocustData(data.stats);
+    setLastUpdate(new Date());
+  });
+
+  useWebSocket('test_started', () => {
+    setIsTestRunning(true);
+    setAutoRefresh(true);
+  });
+
+  useWebSocket('test_stopped', () => {
+    setIsTestRunning(false);
+    setAutoRefresh(false);
+  });
+
+  useWebSocket('test_completed', () => {
+    setIsTestRunning(false);
+    setAutoRefresh(false);
+  });
   // Fonction pour récupérer les données Locust
   const fetchLocustData = async () => {
     try {
@@ -88,7 +109,11 @@ const Visualization = () => {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      await Promise.all([fetchLocustData(), fetchNodeData()]);
+      // Récupérer les données Locust seulement si pas de test en cours (pour éviter les doublons avec WebSocket)
+      if (!isTestRunning) {
+        await fetchLocustData();
+      }
+      await fetchNodeData();
       setLastUpdate(new Date());
     } catch (error) {
       console.error('Erreur récupération données:', error);
@@ -102,19 +127,13 @@ const Visualization = () => {
     fetchAllData();
   }, []);
 
-  // Effet pour l'auto-refresh
+  // Effet pour l'auto-refresh des métriques Node uniquement
   useEffect(() => {
     if (autoRefresh) {
-      const interval = setInterval(fetchAllData, 5000); // Refresh toutes les 5 secondes
-      setRefreshInterval(interval);
+      const interval = setInterval(fetchNodeData, 5000); // Refresh Node toutes les 5 secondes
       return () => clearInterval(interval);
-    } else {
-      if (refreshInterval) {
-        clearInterval(refreshInterval);
-        setRefreshInterval(null);
-      }
     }
-  }, [autoRefresh]);
+  }, [autoRefresh, isTestRunning]);
 
   const handleRefresh = () => {
     fetchAllData();
@@ -131,11 +150,20 @@ const Visualization = () => {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Visualisation des Métriques</h2>
           <p className="text-gray-600 mt-1">
-            Graphiques dynamiques des métriques Locust et système en temps réel
+            Graphiques dynamiques des métriques Locust (WebSocket) et système en temps réel
           </p>
         </div>
         
         <div className="flex items-center space-x-3">
+          {isTestRunning && (
+            <div className="flex items-center space-x-2 px-3 py-1 bg-success-50 rounded-full">
+              <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
+              <span className="text-sm font-medium text-success-700">
+                Données temps réel
+              </span>
+            </div>
+          )}
+          
           {lastUpdate && (
             <span className="text-sm text-gray-500">
               Dernière MAJ: {lastUpdate.toLocaleTimeString()}
@@ -151,7 +179,7 @@ const Visualization = () => {
             }`}
           >
             {autoRefresh ? <EyeIcon className="h-4 w-4" /> : <EyeSlashIcon className="h-4 w-4" />}
-            <span>{autoRefresh ? 'Auto' : 'Manuel'}</span>
+            <span>{autoRefresh ? 'Auto Node' : 'Manuel'}</span>
           </button>
           
           <button
