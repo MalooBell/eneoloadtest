@@ -186,19 +186,9 @@ const Visualization = () => {
     dataBufferRef.current.locust = null;
   }, [limitDataPoints, hasSignificantChange, locustHistory.responseTime]);
 
-  // Accumulation des données Node Exporter avec throttling
+  // Accumulation des données Node Exporter avec throttling - LOGIQUE ORIGINALE RESTAURÉE
   const accumulateNodeData = useCallback((newData) => {
     if (!newData) return;
-
-    const now = Date.now();
-    // Throttle les mises à jour
-    if (now - lastUpdateTimeRef.current < UPDATE_THROTTLE_MS) {
-      dataBufferRef.current.node = newData;
-      return;
-    }
-
-    const dataToProcess = dataBufferRef.current.node || newData;
-    lastUpdateTimeRef.current = now;
 
     const timestamp = new Date().toLocaleTimeString('fr-FR', { 
       hour: '2-digit', 
@@ -212,16 +202,16 @@ const Visualization = () => {
       return metricData.data.result;
     };
 
-    const cpuData = processMetricData(dataToProcess['rate(node_cpu_seconds_total[5m])']);
-    const memoryTotal = processMetricData(dataToProcess['node_memory_MemTotal_bytes']);
-    const memoryAvailable = processMetricData(dataToProcess['node_memory_MemAvailable_bytes']);
-    const diskSize = processMetricData(dataToProcess['node_filesystem_size_bytes']);
-    const diskAvail = processMetricData(dataToProcess['node_filesystem_avail_bytes']);
-    const networkRx = processMetricData(dataToProcess['node_network_receive_bytes_total']);
-    const networkTx = processMetricData(dataToProcess['node_network_transmit_bytes_total']);
-    const load1 = processMetricData(dataToProcess['node_load1']);
-    const load5 = processMetricData(dataToProcess['node_load5']);
-    const load15 = processMetricData(dataToProcess['node_load15']);
+    const cpuData = processMetricData(newData['rate(node_cpu_seconds_total[5m])']);
+    const memoryTotal = processMetricData(newData['node_memory_MemTotal_bytes']);
+    const memoryAvailable = processMetricData(newData['node_memory_MemAvailable_bytes']);
+    const diskSize = processMetricData(newData['node_filesystem_size_bytes']);
+    const diskAvail = processMetricData(newData['node_filesystem_avail_bytes']);
+    const networkRx = processMetricData(newData['node_network_receive_bytes_total']);
+    const networkTx = processMetricData(newData['node_network_transmit_bytes_total']);
+    const load1 = processMetricData(newData['node_load1']);
+    const load5 = processMetricData(newData['node_load5']);
+    const load15 = processMetricData(newData['node_load15']);
 
     setNodeHistory(prev => {
       const newHistory = { ...prev };
@@ -325,11 +315,8 @@ const Visualization = () => {
     });
 
     // Mettre à jour les dernières données
-    setLatestNodeData(dataToProcess);
+    setLatestNodeData(newData);
     setLastUpdate(new Date());
-    
-    // Nettoyer le buffer
-    dataBufferRef.current.node = null;
   }, [limitDataPoints]);
 
   // ===================================================================
@@ -366,7 +353,7 @@ const Visualization = () => {
     }
   }, [accumulateLocustData]);
 
-  // Fonction pour récupérer les données Node Exporter via Prometheus
+  // Fonction pour récupérer les données Node Exporter via Prometheus - LOGIQUE ORIGINALE RESTAURÉE
   const fetchNodeData = useCallback(async () => {
     try {
       const queries = [
@@ -396,6 +383,8 @@ const Visualization = () => {
           results[query] = null;
         }
       }
+      
+      console.log('Données Node récupérées:', results); // Debug
       accumulateNodeData(results);
     } catch (error) {
       console.error('Erreur récupération métriques Node:', error);
