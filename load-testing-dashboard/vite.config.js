@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
   define: {
+    // Cette configuration est correcte et permet au frontend de trouver l'API et le WebSocket
     'import.meta.env.VITE_API_BASE_URL': JSON.stringify(
       process.env.PORT_3001 ? `https://${process.env.PORT_3001}` : 'http://localhost:3001'
     ),
