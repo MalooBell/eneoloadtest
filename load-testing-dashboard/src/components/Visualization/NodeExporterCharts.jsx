@@ -38,7 +38,7 @@ const CustomTooltip = memo(({ active, payload, label }) => {
   return null;
 });
 
-const NodeExporterCharts = memo(({ historyRef, historyVersion, latestData, loading }) => {
+const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
     overview: true,
     cpu: true,
@@ -54,6 +54,9 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, latestData, loadi
       [chartId]: !prev[chartId]
     }));
   };
+
+  // AJOUTEZ CETTE LIGNE POUR DÉRIVER latestData
+  const latestData = useMemo(() => historyRef.current.latestData, [historyRef, historyVersion]);
 
   // Fonction utilitaire pour traiter les métriques Prometheus
   const processMetricData = useMemo(() => (metricData) => {

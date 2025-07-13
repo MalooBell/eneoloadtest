@@ -38,7 +38,7 @@ const CustomTooltip = memo(({ active, payload, label }) => {
   return null;
 });
 
-const LocustMetricsCharts = memo(({ historyRef, historyVersion, latestData, loading }) => {
+const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
     overview: true,
     responseTime: true,
@@ -55,12 +55,15 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, latestData, load
     }));
   };
 
+  // AJOUTEZ CETTE LIGNE POUR DÉRIVER latestData
+  const latestData = useMemo(() => historyRef.current.latestData, [historyRef, historyVersion]);
+
   // Mémoriser les métriques actuelles pour éviter les recalculs
   const currentMetrics = useMemo(() => {
+    // La logique ici ne change pas, mais elle utilise maintenant la variable `latestData` dérivée ci-dessus.
     if (!latestData || !latestData.stats) return {};
     return latestData.stats.find(stat => stat.name === 'Aggregated') || {};
-  }, [latestData]);
-
+  }, [latestData]); // La dépendance devient `latestData`
   // Utiliser historyRef.current et historyVersion pour mémoriser les données
   const chartData = useMemo(() => {
     const history = historyRef.current;

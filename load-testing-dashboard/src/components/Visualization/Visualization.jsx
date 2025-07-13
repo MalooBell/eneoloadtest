@@ -18,6 +18,7 @@ import NodeExporterCharts from './NodeExporterCharts';
 const MAX_DATA_POINTS = 200;
 const UPDATE_THROTTLE_MS = 2000; // Throttle les mises à jour à 2 secondes minimum
 
+
 const Visualization = () => {
   const [activeSection, setActiveSection] = useState('locust');
   const [loading, setLoading] = useState(false);
@@ -36,6 +37,7 @@ const Visualization = () => {
   
   // Historique Locust - stocké dans une référence pour éviter les re-rendus
   const locustHistoryRef = useRef({
+    latestData: null,
     responseTime: [],
     requestsRate: [],
     errorRate: [],
@@ -44,8 +46,8 @@ const Visualization = () => {
     failuresTotal: []
   });
 
-  // Historique Node Exporter - stocké dans une référence pour éviter les re-rendus
   const nodeHistoryRef = useRef({
+    latestData: null,
     cpu: [],
     memory: [],
     disk: [],
@@ -57,8 +59,8 @@ const Visualization = () => {
   const [historyVersion, setHistoryVersion] = useState(0);
 
   // Dernières données reçues (pour les métriques instantanées)
-  const [latestLocustData, setLatestLocustData] = useState(null);
-  const [latestNodeData, setLatestNodeData] = useState(null);
+  // const [latestLocustData, setLatestLocustData] = useState(null);
+  // const [latestNodeData, setLatestNodeData] = useState(null);
 
   const sections = useMemo(() => [
     {
@@ -109,6 +111,7 @@ const Visualization = () => {
       dataBufferRef.current.locust = newData;
       return;
     }
+    
 
     const dataToProcess = dataBufferRef.current.locust || newData;
     lastUpdateTimeRef.current = now;
@@ -130,6 +133,8 @@ const Visualization = () => {
 
     // Mutez directement les tableaux dans la référence
     const newHistory = locustHistoryRef.current;
+    newHistory.latestData = dataToProcess; // Stockez les dernières données ici
+
 
     // Point de données pour les temps de réponse
     const responseTimePoint = {
@@ -173,6 +178,7 @@ const Visualization = () => {
     };
 
     // Ajouter les nouveaux points et limiter la taille
+    
     newHistory.responseTime = limitDataPoints([...newHistory.responseTime, responseTimePoint]);
     newHistory.requestsRate = limitDataPoints([...newHistory.requestsRate, requestsRatePoint]);
     newHistory.errorRate = limitDataPoints([...newHistory.errorRate, errorRatePoint]);
@@ -180,7 +186,7 @@ const Visualization = () => {
     newHistory.requestsTotal = limitDataPoints([...newHistory.requestsTotal, requestsTotalPoint]);
 
     // Mettre à jour les dernières données
-    setLatestLocustData(dataToProcess);
+    //setLatestLocustData(dataToProcess);
     setLastUpdate(new Date());
     
     // Forcez un re-rendu des graphiques en changeant la version
@@ -219,6 +225,7 @@ const Visualization = () => {
 
     // Mutez directement les tableaux dans la référence
     const newHistory = nodeHistoryRef.current;
+    newHistory.latestData = newData; // Stockez les dernières données ici
 
     // Calculs pour CPU
     const calculateCpuUsage = () => {
@@ -316,7 +323,7 @@ const Visualization = () => {
     newHistory.load = limitDataPoints([...newHistory.load, loadPoint]);
 
     // Mettre à jour les dernières données
-    setLatestNodeData(newData);
+    //setLatestNodeData(newData);
     setLastUpdate(new Date());
     
     // Forcez un re-rendu des graphiques en changeant la version
@@ -431,8 +438,8 @@ const Visualization = () => {
     };
     
     // Réinitialisez les autres états
-    setLatestLocustData(null);
-    setLatestNodeData(null);
+    // setLatestLocustData(null);
+    // setLatestNodeData(null);
     setLastUpdate(null);
     
     // Forcez le re-rendu pour afficher les graphiques vides
@@ -485,8 +492,8 @@ const Visualization = () => {
   }, []);
 
   // Mémoriser les données pour éviter les re-rendus inutiles
-  const memoizedLatestLocustData = useMemo(() => latestLocustData, [latestLocustData]);
-  const memoizedLatestNodeData = useMemo(() => latestNodeData, [latestNodeData]);
+  //const memoizedLatestLocustData = useMemo(() => latestLocustData, [latestLocustData]);
+  //const memoizedLatestNodeData = useMemo(() => latestNodeData, [latestNodeData]);
 
   // ===================================================================
   //                    RENDU DU COMPOSANT
@@ -621,7 +628,7 @@ const Visualization = () => {
           <LocustMetricsCharts 
             historyRef={locustHistoryRef}
             historyVersion={historyVersion}
-            latestData={memoizedLatestLocustData}
+            //latestData={memoizedLatestLocustData}
             loading={loading}
           />
         )}
@@ -630,7 +637,7 @@ const Visualization = () => {
           <NodeExporterCharts 
             historyRef={nodeHistoryRef}
             historyVersion={historyVersion}
-            latestData={memoizedLatestNodeData}
+            //latestData={memoizedLatestNodeData}
             loading={loading}
           />
         )}
