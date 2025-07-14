@@ -230,17 +230,16 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         dataCount={chartData.memory.length}
       >
         {chartData.memory.length > 0 ? (
-          <CanvasAreaChart
+          <CanvasLineChart
             data={chartData.memory}
             width={800}
             height={300}
-            areas={[
-              { dataKey: 'used', name: 'Utilisée (GB)', color: '#ef4444', stackId: 'memory' },
-              { dataKey: 'available', name: 'Disponible (GB)', color: '#22c55e', stackId: 'memory' }
+            lines={[
+              { dataKey: 'used', name: 'Utilisée (GB)', color: '#ef4444' },
+              { dataKey: 'percentage', name: 'Pourcentage (%)', color: '#f59e0b' }
             ]}
             animate={true}
-            stacked={true}
-            opacity={0.6}
+            showPoints={true}
             strokeWidth={2}
           />
         ) : (
@@ -257,17 +256,16 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         dataCount={chartData.disk.length}
       >
         {chartData.disk.length > 0 ? (
-          <CanvasAreaChart
+          <CanvasLineChart
             data={chartData.disk}
             width={800}
             height={300}
-            areas={[
-              { dataKey: 'used', name: 'Utilisé (GB)', color: '#ef4444', stackId: 'disk' },
-              { dataKey: 'available', name: 'Disponible (GB)', color: '#22c55e', stackId: 'disk' }
+            lines={[
+              { dataKey: 'used', name: 'Utilisé (GB)', color: '#ef4444' },
+              { dataKey: 'percentage', name: 'Pourcentage (%)', color: '#f59e0b' }
             ]}
             animate={true}
-            stacked={true}
-            opacity={0.6}
+            showPoints={true}
             strokeWidth={2}
           />
         ) : (

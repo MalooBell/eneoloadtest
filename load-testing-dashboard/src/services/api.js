@@ -85,7 +85,7 @@ export const metricsService = {
   // Obtenir les métriques Locust
   getLocustMetrics: async () => {
     try {
-      const response = await axios.get('http://localhost:8089/stats/requests');
+      const response = await api.get('/locust/stats');
       return response.data;
     } catch (error) {
       console.error('Erreur récupération métriques Locust:', error);

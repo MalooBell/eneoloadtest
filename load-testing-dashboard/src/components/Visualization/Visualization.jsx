@@ -202,6 +202,16 @@ const Visualization = ({ selectedHistoricalTest, onClearSelection }) => {
   const accumulateNodeData = useCallback((newData) => {
     if (!newData) return;
 
+    const now = Date.now();
+    // Throttle les mises à jour pour Node aussi
+    if (now - lastUpdateTimeRef.current < UPDATE_THROTTLE_MS) {
+      dataBufferRef.current.node = newData;
+      return;
+    }
+
+    const dataToProcess = dataBufferRef.current.node || newData;
+    lastUpdateTimeRef.current = now;
+
     const timestamp = new Date().toLocaleTimeString('fr-FR', { 
       hour: '2-digit', 
       minute: '2-digit', 
@@ -214,20 +224,20 @@ const Visualization = ({ selectedHistoricalTest, onClearSelection }) => {
       return metricData.data.result;
     };
 
-    const cpuData = processMetricData(newData['rate(node_cpu_seconds_total[5m])']);
-    const memoryTotal = processMetricData(newData['node_memory_MemTotal_bytes']);
-    const memoryAvailable = processMetricData(newData['node_memory_MemAvailable_bytes']);
-    const diskSize = processMetricData(newData['node_filesystem_size_bytes']);
-    const diskAvail = processMetricData(newData['node_filesystem_avail_bytes']);
-    const networkRx = processMetricData(newData['node_network_receive_bytes_total']);
-    const networkTx = processMetricData(newData['node_network_transmit_bytes_total']);
-    const load1 = processMetricData(newData['node_load1']);
-    const load5 = processMetricData(newData['node_load5']);
-    const load15 = processMetricData(newData['node_load15']);
+    const cpuData = processMetricData(dataToProcess['rate(node_cpu_seconds_total[5m])']);
+    const memoryTotal = processMetricData(dataToProcess['node_memory_MemTotal_bytes']);
+    const memoryAvailable = processMetricData(dataToProcess['node_memory_MemAvailable_bytes']);
+    const diskSize = processMetricData(dataToProcess['node_filesystem_size_bytes']);
+    const diskAvail = processMetricData(dataToProcess['node_filesystem_avail_bytes']);
+    const networkRx = processMetricData(dataToProcess['node_network_receive_bytes_total']);
+    const networkTx = processMetricData(dataToProcess['node_network_transmit_bytes_total']);
+    const load1 = processMetricData(dataToProcess['node_load1']);
+    const load5 = processMetricData(dataToProcess['node_load5']);
+    const load15 = processMetricData(dataToProcess['node_load15']);
 
     // Mutez directement les tableaux dans la référence
     const newHistory = nodeHistoryRef.current;
-    newHistory.latestData = newData; // Stockez les dernières données ici
+    newHistory.latestData = dataToProcess; // Stockez les dernières données ici
 
     // Calculs pour CPU
     const calculateCpuUsage = () => {
@@ -330,6 +340,9 @@ const Visualization = ({ selectedHistoricalTest, onClearSelection }) => {
     
     // Forcez un re-rendu des graphiques en changeant la version
     setHistoryVersion(v => v + 1);
+    
+    // Nettoyer le buffer
+    dataBufferRef.current.node = null;
   }, [limitDataPoints]);
 
   // ===================================================================
@@ -612,7 +625,7 @@ const Visualization = ({ selectedHistoricalTest, onClearSelection }) => {
   // Effet pour l'auto-refresh des métriques Node uniquement
   useEffect(() => {
     if (autoRefresh) {
-      const interval = setInterval(fetchNodeData, 2000); // Refresh Node toutes les 2 secondes pour plus de fluidité
+      const interval = setInterval(fetchNodeData, 1000); // Refresh Node toutes les 1 seconde pour plus de fluidité
       refreshIntervalRef.current = interval;
       return () => {
         clearInterval(interval);
