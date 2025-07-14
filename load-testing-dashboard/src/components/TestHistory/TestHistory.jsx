@@ -66,8 +66,8 @@ const TestHistory = ({ onNavigateToVisualization, isTestRunning }) => {
       return;
     }
     
-    // Naviguer vers la page visualisation
-    onNavigateToVisualization();
+    // Naviguer vers la page visualisation avec les données du test
+    onNavigateToVisualization(test);
   };
 
   if (loading) {
@@ -214,7 +214,9 @@ const TestHistory = ({ onNavigateToVisualization, isTestRunning }) => {
                           onClick={() => handleViewVisualization(test)}
                           className={cn(
                             'text-purple-600 hover:text-purple-900',
-                            isTestRunning && 'opacity-50 cursor-not-allowed'
+                            if (selectedTest) {
+                              handleViewVisualization(selectedTest);
+                            }
                           )}
                           disabled={isTestRunning}
                           title="Voir les graphiques"

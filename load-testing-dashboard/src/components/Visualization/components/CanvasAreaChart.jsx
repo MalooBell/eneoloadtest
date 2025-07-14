@@ -17,6 +17,8 @@ const CanvasAreaChart = ({
 }) => {
   const tooltipRef = useRef(null);
   const hoverDataRef = useRef(null);
+  const lastDataLengthRef = useRef(0);
+  const animationFrameRef = useRef(null);
 
   const {
     canvasRef,
@@ -85,13 +87,10 @@ const CanvasAreaChart = ({
     return result;
   }, [processedData, stacked]);
 
-  // Fonction de dessin principal
-  const drawChart = useCallback((progress = 1) => {
+  // Fonction de dessin principal avec rendu incrémental
+  const drawChart = useCallback((progress = 1, incremental = false) => {
     const context = setupCanvas();
     if (!context || !stackedData.length) return;
-
-    // Effacer le canvas
-    context.clearRect(0, 0, width, height);
 
     // Créer les échelles
     const allValues = stacked 
@@ -101,10 +100,10 @@ const CanvasAreaChart = ({
 
     if (!timeValues.length || !allValues.length) return;
 
-    const xScale = d3.scalePoint()
-      .domain(timeValues)
-      .range([0, width - margin.left - margin.right])
-      .padding(0.1);
+    // Utiliser scaleLinear pour avoir la méthode invert
+    const xScale = d3.scaleLinear()
+      .domain([0, timeValues.length - 1])
+      .range([0, width - margin.left - margin.right]);
 
     const yScale = d3.scaleLinear()
       .domain([0, d3.max(allValues) * 1.1])
@@ -113,69 +112,126 @@ const CanvasAreaChart = ({
 
     const innerHeight = height - margin.top - margin.bottom;
 
-    // Dessiner la grille
-    drawGrid(context, { x: xScale, y: yScale });
+    // Rendu incrémental ou complet
+    if (incremental && lastDataLengthRef.current > 0) {
+      // Dessiner seulement les nouveaux segments
+      const newPointsStart = lastDataLengthRef.current - 1;
+      
+      context.save();
+      context.translate(margin.left, margin.top);
 
-    // Dessiner les axes
-    drawAxes(context, { x: xScale, y: yScale });
+      stackedData.forEach((areaData, index) => {
+        if (!areaData.data.length || areaData.data.length <= newPointsStart) return;
 
-    // Dessiner les aires
-    context.save();
-    context.translate(margin.left, margin.top);
+        const newSegmentData = areaData.data.slice(newPointsStart);
+        if (newSegmentData.length < 2) return;
 
-    stackedData.forEach((areaData, index) => {
-      if (!areaData.data.length) return;
+        // Dessiner le nouveau segment d'aire
+        const gradient = context.createLinearGradient(0, 0, 0, innerHeight);
+        gradient.addColorStop(0, areaData.color + Math.floor(opacity * 255).toString(16).padStart(2, '0'));
+        gradient.addColorStop(1, areaData.color + '10');
 
-      // Calculer les points pour l'animation
-      const totalPoints = areaData.data.length;
-      const visiblePoints = Math.floor(totalPoints * progress);
-      const animatedData = areaData.data.slice(0, visiblePoints);
+        context.fillStyle = gradient;
+        context.strokeStyle = areaData.color;
+        context.lineWidth = strokeWidth;
 
-      if (animatedData.length < 2) return;
+        // Créer le chemin pour le nouveau segment
+        context.beginPath();
+        newSegmentData.forEach((d, i) => {
+          const actualIndex = newPointsStart + i;
+          const x = xScale(actualIndex);
+          const y0 = stacked ? yScale(d.y0 || 0) : innerHeight;
+          const y1 = yScale(stacked ? (d.y1 || d.value) : d.value);
+          
+          if (i === 0) {
+            context.moveTo(x, y0);
+            context.lineTo(x, y1);
+          } else {
+            context.lineTo(x, y1);
+          }
+        });
 
-      // Créer le générateur d'aire
-      const area = d3.area()
-        .x(d => xScale(d.time))
-        .y0(d => stacked ? yScale(d.y0 || 0) : innerHeight)
-        .y1(d => yScale(stacked ? (d.y1 || d.value) : d.value))
-        .curve(d3.curveCardinal.tension(0.3))
-        .context(context);
+        // Fermer le chemin pour l'aire
+        for (let i = newSegmentData.length - 1; i >= 0; i--) {
+          const actualIndex = newPointsStart + i;
+          const x = xScale(actualIndex);
+          const y0 = stacked ? yScale(newSegmentData[i].y0 || 0) : innerHeight;
+          context.lineTo(x, y0);
+        }
+        context.closePath();
+        context.fill();
+        context.stroke();
+      });
 
-      // Dessiner l'aire avec gradient
-      const gradient = context.createLinearGradient(0, 0, 0, innerHeight);
-      gradient.addColorStop(0, areaData.color + Math.floor(opacity * 255).toString(16).padStart(2, '0'));
-      gradient.addColorStop(1, areaData.color + '10');
+      context.restore();
+    } else {
+      // Rendu complet
+      context.clearRect(0, 0, width, height);
 
-      context.fillStyle = gradient;
-      context.beginPath();
-      area(animatedData);
-      context.fill();
+      // Dessiner la grille
+      drawGrid(context, { x: xScale, y: yScale });
 
-      // Dessiner la ligne de contour
-      context.strokeStyle = areaData.color;
-      context.lineWidth = strokeWidth;
-      context.lineCap = 'round';
-      context.lineJoin = 'round';
-      context.globalAlpha = 0.8;
+      // Dessiner les axes
+      drawAxes(context, { x: xScale, y: yScale });
 
-      // Ligne supérieure
-      const line = d3.line()
-        .x(d => xScale(d.time))
-        .y(d => yScale(stacked ? (d.y1 || d.value) : d.value))
-        .curve(d3.curveCardinal.tension(0.3))
-        .context(context);
+      // Dessiner les aires
+      context.save();
+      context.translate(margin.left, margin.top);
 
-      context.beginPath();
-      line(animatedData);
-      context.stroke();
+      stackedData.forEach((areaData, index) => {
+        if (!areaData.data.length) return;
 
-      context.globalAlpha = 1;
-    });
+        // Calculer les points pour l'animation
+        const totalPoints = areaData.data.length;
+        const visiblePoints = Math.floor(totalPoints * progress);
+        const animatedData = areaData.data.slice(0, visiblePoints);
 
-    context.restore();
+        if (animatedData.length < 2) return;
+
+        // Créer le générateur d'aire
+        const area = d3.area()
+          .x((d, i) => xScale(i))
+          .y0(d => stacked ? yScale(d.y0 || 0) : innerHeight)
+          .y1(d => yScale(stacked ? (d.y1 || d.value) : d.value))
+          .curve(d3.curveCardinal.tension(0.3))
+          .context(context);
+
+        // Dessiner l'aire avec gradient
+        const gradient = context.createLinearGradient(0, 0, 0, innerHeight);
+        gradient.addColorStop(0, areaData.color + Math.floor(opacity * 255).toString(16).padStart(2, '0'));
+        gradient.addColorStop(1, areaData.color + '10');
+
+        context.fillStyle = gradient;
+        context.beginPath();
+        area(animatedData);
+        context.fill();
+
+        // Dessiner la ligne de contour
+        context.strokeStyle = areaData.color;
+        context.lineWidth = strokeWidth;
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        context.globalAlpha = 0.8;
+
+        // Ligne supérieure
+        const line = d3.line()
+          .x((d, i) => xScale(i))
+          .y(d => yScale(stacked ? (d.y1 || d.value) : d.value))
+          .curve(d3.curveCardinal.tension(0.3))
+          .context(context);
+
+        context.beginPath();
+        line(animatedData);
+        context.stroke();
+
+        context.globalAlpha = 1;
+      });
+
+      context.restore();
+    }
   }, [setupCanvas, stackedData, width, height, margin, drawGrid, drawAxes, stacked, opacity, strokeWidth, data]);
 
-  // Gestion du survol pour les tooltips
+  // Gestion du survol pour les tooltips - CORRIGÉ avec scaleLinear
   const handleMouseMove = useCallback((event) => {
     if (!canvasRef.current || !stackedData.length) return;
 
@@ -184,26 +240,13 @@ const CanvasAreaChart = ({
 
     // Trouver le point le plus proche
     const timeValues = data.map(d => d.time);
-    const xScale = d3.scalePoint()
-      .domain(timeValues)
-      .range([0, width - margin.left - margin.right])
-      .padding(0.1);
+    const xScale = d3.scaleLinear()
+      .domain([0, timeValues.length - 1])
+      .range([0, width - margin.left - margin.right]);
 
-    // const closestTimeIndex = d3.bisectLeft(timeValues, xScale.invert(x));
-    // const closestTime = timeValues[closestTimeIndex];
-
-    // Find the closest point without using invert
-    let closestTimeIndex = 0;
-    let minDistance = Infinity;
-
-    const domain = xScale.domain();
-    domain.forEach((d, i) => {
-      const distance = Math.abs(xScale(d) - x);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestTimeIndex = i;
-      }
-    });
+    // Maintenant on peut utiliser invert car c'est scaleLinear
+    const mouseIndex = Math.round(xScale.invert(x));
+    const closestTimeIndex = Math.max(0, Math.min(mouseIndex, timeValues.length - 1));
     const closestTime = timeValues[closestTimeIndex];
 
     if (closestTime && tooltipRef.current) {
@@ -240,12 +283,39 @@ const CanvasAreaChart = ({
     hoverDataRef.current = null;
   }, []);
 
-  // Effet pour redessiner quand les données changent
+  // Effet pour redessiner avec rendu incrémental
   useEffect(() => {
     if (stackedData.length > 0) {
-      animateChart(drawChart);
+      const currentDataLength = data.length;
+      const isIncremental = currentDataLength > lastDataLengthRef.current && 
+                           lastDataLengthRef.current > 0 && 
+                           currentDataLength - lastDataLengthRef.current < 5;
+      
+      if (isIncremental) {
+        // Mise à jour incrémentale
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+        animationFrameRef.current = requestAnimationFrame(() => {
+          drawChart(1, true);
+        });
+      } else {
+        // Animation complète
+        animateChart(drawChart);
+      }
+      
+      lastDataLengthRef.current = currentDataLength;
     }
-  }, [stackedData, animateChart, drawChart]);
+  }, [stackedData, animateChart, drawChart, data.length]);
+
+  // Nettoyage
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className={`relative ${className}`}>

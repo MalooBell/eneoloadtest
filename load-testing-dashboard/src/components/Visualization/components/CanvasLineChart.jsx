@@ -16,6 +16,9 @@ const CanvasLineChart = ({
 }) => {
   const tooltipRef = useRef(null);
   const hoverDataRef = useRef(null);
+  const lastDataLengthRef = useRef(0);
+  const animationFrameRef = useRef(null);
+  const previousPathsRef = useRef([]);
 
   const {
     canvasRef,
@@ -49,13 +52,10 @@ const CanvasLineChart = ({
     }));
   }, [data, lines, colors]);
 
-  // Fonction de dessin principal
-  const drawChart = useCallback((progress = 1) => {
+  // Fonction de dessin optimisée pour la fluidité avec rendu incrémental
+  const drawChart = useCallback((progress = 1, incremental = false) => {
     const context = setupCanvas();
     if (!context || !processedData.length) return;
-
-    // Effacer le canvas
-    context.clearRect(0, 0, width, height);
 
     // Créer les échelles basées sur toutes les données
     const allValues = processedData.flatMap(line => line.data.map(d => d.value));
@@ -63,119 +63,164 @@ const CanvasLineChart = ({
 
     if (!timeValues.length || !allValues.length) return;
 
-    const xScale = d3.scalePoint()
-      .domain(timeValues)
-      .range([0, width - margin.left - margin.right])
-      .padding(0.1);
+    // Utiliser scaleLinear pour avoir la méthode invert
+    const xScale = d3.scaleLinear()
+      .domain([0, timeValues.length - 1])
+      .range([0, width - margin.left - margin.right]);
 
     const yScale = d3.scaleLinear()
       .domain([Math.min(0, d3.min(allValues)), d3.max(allValues) * 1.1])
       .range([height - margin.top - margin.bottom, 0])
       .nice();
 
-    // Dessiner la grille
-    drawGrid(context, { x: xScale, y: yScale });
-
-    // Dessiner les axes
-    drawAxes(context, { x: xScale, y: yScale });
-
-    // Dessiner les lignes
-    context.save();
-    context.translate(margin.left, margin.top);
-
-    processedData.forEach((lineData, index) => {
-      if (!lineData.data.length) return;
-
-      // Calculer les points pour l'animation
-      const totalPoints = lineData.data.length;
-      const visiblePoints = Math.floor(totalPoints * progress);
-      const animatedData = lineData.data.slice(0, visiblePoints);
-
-      if (animatedData.length < 2) return;
-
-      // Configuration du style
-      context.strokeStyle = lineData.color;
-      context.lineWidth = strokeWidth;
-      context.lineCap = 'round';
-      context.lineJoin = 'round';
-
-      // Dessiner la ligne avec effet de halo
-      context.shadowColor = lineData.color;
-      context.shadowBlur = 3;
-      context.globalAlpha = 0.8;
-
-      // Générer le chemin de la ligne
-      context.beginPath();
+    // Pour le rendu incrémental, on ne redessine que les nouveaux points
+    if (incremental && lastDataLengthRef.current > 0) {
+      // Dessiner seulement les nouveaux segments
+      const newPointsStart = lastDataLengthRef.current - 1;
       
-      // Utiliser une courbe lisse
-      const line = d3.line()
-        .x(d => xScale(d.time))
-        .y(d => yScale(d.value))
-        .curve(d3.curveCardinal.tension(0.3))
-        .context(context);
+      context.save();
+      context.translate(margin.left, margin.top);
 
-      line(animatedData);
-      context.stroke();
+      processedData.forEach((lineData, index) => {
+        if (!lineData.data.length || lineData.data.length <= newPointsStart) return;
 
-      // Réinitialiser les effets
-      context.shadowBlur = 0;
-      context.globalAlpha = 1;
+        const newSegmentData = lineData.data.slice(newPointsStart);
+        if (newSegmentData.length < 2) return;
 
-      // Dessiner les points si demandé
-      if (showPoints) {
-        context.fillStyle = lineData.color;
-        animatedData.forEach(d => {
-          const x = xScale(d.time);
+        // Configuration du style
+        context.strokeStyle = lineData.color;
+        context.lineWidth = strokeWidth;
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        context.shadowColor = lineData.color;
+        context.shadowBlur = 2;
+        context.globalAlpha = 0.8;
+
+        // Dessiner le nouveau segment
+        context.beginPath();
+        newSegmentData.forEach((d, i) => {
+          const actualIndex = newPointsStart + i;
+          const x = xScale(actualIndex);
           const y = yScale(d.value);
           
-          context.beginPath();
-          context.arc(x, y, 3, 0, 2 * Math.PI);
-          context.fill();
-          
-          // Halo autour du point
-          context.beginPath();
-          context.arc(x, y, 6, 0, 2 * Math.PI);
-          context.strokeStyle = lineData.color;
-          context.lineWidth = 1;
-          context.globalAlpha = 0.3;
-          context.stroke();
-          context.globalAlpha = 1;
+          if (i === 0) {
+            context.moveTo(x, y);
+          } else {
+            context.lineTo(x, y);
+          }
         });
-      }
-    });
+        context.stroke();
 
-    context.restore();
+        // Dessiner les nouveaux points si demandé
+        if (showPoints) {
+          context.fillStyle = lineData.color;
+          context.shadowBlur = 0;
+          newSegmentData.forEach((d, i) => {
+            const actualIndex = newPointsStart + i;
+            const x = xScale(actualIndex);
+            const y = yScale(d.value);
+            
+            context.beginPath();
+            context.arc(x, y, 3, 0, 2 * Math.PI);
+            context.fill();
+          });
+        }
+
+        context.shadowBlur = 0;
+        context.globalAlpha = 1;
+      });
+
+      context.restore();
+    } else {
+      // Rendu complet
+      context.clearRect(0, 0, width, height);
+
+      // Dessiner la grille et les axes
+      drawGrid(context, { x: xScale, y: yScale });
+      drawAxes(context, { x: xScale, y: yScale });
+
+      // Dessiner les lignes
+      context.save();
+      context.translate(margin.left, margin.top);
+
+      processedData.forEach((lineData, index) => {
+        if (!lineData.data.length) return;
+
+        // Calculer les points pour l'animation
+        const totalPoints = lineData.data.length;
+        const visiblePoints = Math.floor(totalPoints * progress);
+        const animatedData = lineData.data.slice(0, visiblePoints);
+
+        if (animatedData.length < 2) return;
+
+        // Configuration du style
+        context.strokeStyle = lineData.color;
+        context.lineWidth = strokeWidth;
+        context.lineCap = 'round';
+        context.lineJoin = 'round';
+        context.shadowColor = lineData.color;
+        context.shadowBlur = 3;
+        context.globalAlpha = 0.8;
+
+        // Générer le chemin de la ligne avec courbe lisse
+        context.beginPath();
+        
+        const line = d3.line()
+          .x((d, i) => xScale(i))
+          .y(d => yScale(d.value))
+          .curve(d3.curveCardinal.tension(0.3))
+          .context(context);
+
+        line(animatedData);
+        context.stroke();
+
+        // Réinitialiser les effets
+        context.shadowBlur = 0;
+        context.globalAlpha = 1;
+
+        // Dessiner les points si demandé
+        if (showPoints) {
+          context.fillStyle = lineData.color;
+          animatedData.forEach((d, i) => {
+            const x = xScale(i);
+            const y = yScale(d.value);
+            
+            context.beginPath();
+            context.arc(x, y, 3, 0, 2 * Math.PI);
+            context.fill();
+            
+            // Halo autour du point
+            context.beginPath();
+            context.arc(x, y, 6, 0, 2 * Math.PI);
+            context.strokeStyle = lineData.color;
+            context.lineWidth = 1;
+            context.globalAlpha = 0.3;
+            context.stroke();
+            context.globalAlpha = 1;
+          });
+        }
+      });
+
+      context.restore();
+    }
   }, [setupCanvas, processedData, width, height, margin, drawGrid, drawAxes, strokeWidth, showPoints, data]);
 
-  // Gestion du survol pour les tooltips
+  // Gestion du survol pour les tooltips - CORRIGÉ avec scaleLinear
   const handleMouseMove = useCallback((event) => {
     if (!canvasRef.current || !processedData.length) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const x = event.clientX - rect.left - margin.left;
-    const y = event.clientY - rect.top - margin.top;
 
-    // Trouver le point le plus proche
+    // Trouver le point le plus proche avec échelle linéaire
     const timeValues = data.map(d => d.time);
-    const xScale = d3.scalePoint()
-      .domain(timeValues)
-      .range([0, width - margin.left - margin.right])
-      .padding(0.1);
+    const xScale = d3.scaleLinear()
+      .domain([0, timeValues.length - 1])
+      .range([0, width - margin.left - margin.right]);
 
-    // const closestTimeIndex = d3.bisectLeft(timeValues, xScale.invert(x));
-    // const closestTime = timeValues[closestTimeIndex];
-    // Find the closest point without using invert
-    let closestTimeIndex = 0;
-    let minDistance = Infinity;
-
-    const domain = xScale.domain();
-    domain.forEach((d, i) => {
-      const distance = Math.abs(xScale(d) - x);
-      if (distance < minDistance) {
-        minDistance = distance;
-        closestTimeIndex = i;
-      }
-    });
+    // Maintenant on peut utiliser invert car c'est scaleLinear
+    const mouseIndex = Math.round(xScale.invert(x));
+    const closestTimeIndex = Math.max(0, Math.min(mouseIndex, timeValues.length - 1));
     const closestTime = timeValues[closestTimeIndex];
 
     if (closestTime && tooltipRef.current) {
@@ -187,7 +232,7 @@ const CanvasLineChart = ({
 
       hoverDataRef.current = { time: closestTime, data: tooltipData, x: event.clientX, y: event.clientY };
       
-      // Afficher le tooltip (implémentation basique)
+      // Afficher le tooltip
       tooltipRef.current.style.display = 'block';
       tooltipRef.current.style.left = `${event.clientX + 10}px`;
       tooltipRef.current.style.top = `${event.clientY - 10}px`;
@@ -212,12 +257,39 @@ const CanvasLineChart = ({
     hoverDataRef.current = null;
   }, []);
 
-  // Effet pour redessiner quand les données changent
+  // Effet pour redessiner de manière fluide avec rendu incrémental
   useEffect(() => {
     if (processedData.length > 0) {
-      animateChart(drawChart);
+      const currentDataLength = data.length;
+      const isIncremental = currentDataLength > lastDataLengthRef.current && 
+                           lastDataLengthRef.current > 0 && 
+                           currentDataLength - lastDataLengthRef.current < 5; // Seulement pour de petits ajouts
+      
+      if (isIncremental) {
+        // Mise à jour incrémentale pour plus de fluidité
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+        animationFrameRef.current = requestAnimationFrame(() => {
+          drawChart(1, true); // Rendu incrémental
+        });
+      } else {
+        // Première fois ou changement majeur - animation complète
+        animateChart(drawChart);
+      }
+      
+      lastDataLengthRef.current = currentDataLength;
     }
-  }, [processedData, animateChart, drawChart]);
+  }, [processedData, animateChart, drawChart, data.length]);
+
+  // Nettoyage
+  useEffect(() => {
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
 
   return (
     <div className={`relative ${className}`}>

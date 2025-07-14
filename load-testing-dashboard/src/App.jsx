@@ -7,6 +7,8 @@ import Monitoring from './components/Monitoring/Monitoring';
 import Visualization from './components/Visualization/Visualization';
 import { testService } from './services/api';
 import { useWebSocket, useWebSocketConnection } from './hooks/useWebSocket';
+import { testService } from './services/api';
+import { useWebSocket, useWebSocketConnection } from './hooks/useWebSocket';
 
 function App() {
   const [currentTab, setCurrentTab] = useState('new-test');
@@ -14,6 +16,7 @@ function App() {
   const [currentTest, setCurrentTest] = useState(null);
   const [testStats, setTestStats] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedHistoricalTest, setSelectedHistoricalTest] = useState(null);
 
   // Connexion WebSocket
   useWebSocketConnection();
@@ -123,14 +126,20 @@ function App() {
       case 'history':
         return (
           <TestHistory 
-            onNavigateToVisualization={() => setCurrentTab('visualization')}
+            onNavigateToVisualization={(testData) => {
+              setSelectedHistoricalTest(testData);
+              setCurrentTab('visualization');
+            }}
             isTestRunning={isTestRunning}
           />
         );
       
       default:
         return <div>Onglet non trouvé</div>;
-    }
+          <Visualization 
+            selectedHistoricalTest={selectedHistoricalTest}
+            onClearSelection={() => setSelectedHistoricalTest(null)}
+          />
   };
 
   return (
