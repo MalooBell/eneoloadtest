@@ -1,17 +1,5 @@
 import React, { useState, memo, useMemo } from 'react';
 import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
-} from 'recharts';
-import {
   ClockIcon,
   UserGroupIcon,
   ExclamationTriangleIcon,
@@ -20,23 +8,8 @@ import {
   EyeSlashIcon
 } from '@heroicons/react/24/outline';
 import MetricCard from '../Common/MetricCard';
-
-// Composant Tooltip personnalisé pour éviter les re-rendus
-const CustomTooltip = memo(({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
-        <p className="text-sm font-medium text-gray-900">{`Temps: ${label}`}</p>
-        {payload.map((entry, index) => (
-          <p key={index} className="text-sm" style={{ color: entry.color }}>
-            {`${entry.name}: ${entry.value}`}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
-});
+import CanvasLineChart from './components/CanvasLineChart';
+import CanvasAreaChart from './components/CanvasAreaChart';
 
 const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
@@ -55,15 +28,15 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
     }));
   };
 
-  // AJOUTEZ CETTE LIGNE POUR DÉRIVER latestData
+  // Dériver latestData depuis historyRef
   const latestData = useMemo(() => historyRef.current.latestData, [historyRef, historyVersion]);
 
   // Mémoriser les métriques actuelles pour éviter les recalculs
   const currentMetrics = useMemo(() => {
-    // La logique ici ne change pas, mais elle utilise maintenant la variable `latestData` dérivée ci-dessus.
     if (!latestData || !latestData.stats) return {};
     return latestData.stats.find(stat => stat.name === 'Aggregated') || {};
-  }, [latestData]); // La dépendance devient `latestData`
+  }, [latestData]);
+
   // Utiliser historyRef.current et historyVersion pour mémoriser les données
   const chartData = useMemo(() => {
     const history = historyRef.current;
@@ -74,7 +47,7 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
       userCount: history.userCount || [],
       requestsTotal: history.requestsTotal || []
     };
-  }, [historyRef, historyVersion]); // Le re-calcul se fait uniquement quand la version change !
+  }, [historyRef, historyVersion]);
 
   if (loading && !latestData) {
     return (
@@ -157,59 +130,26 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         </div>
       )}
 
-      {/* Graphique temporel des temps de réponse */}
+      {/* Graphique Canvas des temps de réponse */}
       <ChartContainer 
         title="Évolution des Temps de Réponse" 
         chartId="responseTime"
         dataCount={chartData.responseTime.length}
       >
         {chartData.responseTime.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData.responseTime} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="avg" 
-                stroke="#3b82f6" 
-                strokeWidth={2}
-                name="Moyenne (ms)" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="median" 
-                stroke="#10b981" 
-                strokeWidth={2}
-                name="Médiane (ms)" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="p95" 
-                stroke="#f59e0b" 
-                strokeWidth={2}
-                name="95e centile (ms)" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <CanvasLineChart
+            data={chartData.responseTime}
+            width={800}
+            height={300}
+            lines={[
+              { dataKey: 'avg', name: 'Moyenne', color: '#3b82f6' },
+              { dataKey: 'median', name: 'Médiane', color: '#10b981' },
+              { dataKey: 'p95', name: '95e centile', color: '#f59e0b' }
+            ]}
+            animate={true}
+            showPoints={false}
+            strokeWidth={2}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée de temps de réponse disponible
@@ -217,49 +157,26 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         )}
       </ChartContainer>
 
-      {/* Graphique temporel du taux de requêtes */}
+      {/* Graphique Canvas du taux de requêtes */}
       <ChartContainer 
         title="Évolution du Taux de Requêtes" 
         chartId="requestsRate"
         dataCount={chartData.requestsRate.length}
       >
         {chartData.requestsRate.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData.requestsRate} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Area 
-                type="monotone" 
-                dataKey="rps" 
-                stackId="1" 
-                stroke="#3b82f6" 
-                fill="#3b82f6" 
-                fillOpacity={0.6} 
-                name="RPS Actuel" 
-                isAnimationActive={false}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="totalRps" 
-                stackId="2" 
-                stroke="#10b981" 
-                fill="#10b981" 
-                fillOpacity={0.4} 
-                name="RPS Total" 
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <CanvasAreaChart
+            data={chartData.requestsRate}
+            width={800}
+            height={300}
+            areas={[
+              { dataKey: 'rps', name: 'RPS Actuel', color: '#3b82f6', stackId: '1' },
+              { dataKey: 'totalRps', name: 'RPS Total', color: '#10b981', stackId: '2' }
+            ]}
+            animate={true}
+            stacked={false}
+            opacity={0.6}
+            strokeWidth={2}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée de taux de requêtes disponible
@@ -267,52 +184,25 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         )}
       </ChartContainer>
 
-      {/* Graphique temporel des erreurs */}
+      {/* Graphique Canvas des erreurs */}
       <ChartContainer 
         title="Évolution des Erreurs" 
         chartId="errors"
         dataCount={chartData.errorRate.length}
       >
         {chartData.errorRate.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData.errorRate} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis yAxisId="left" tick={{ fontSize: 12 }} />
-              <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Line 
-                yAxisId="left"
-                type="monotone" 
-                dataKey="failures" 
-                stroke="#ef4444" 
-                strokeWidth={2}
-                name="Nombre d'échecs" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-              <Line 
-                yAxisId="right"
-                type="monotone" 
-                dataKey="errorRate" 
-                stroke="#f59e0b" 
-                strokeWidth={3}
-                name="Taux d'erreur %" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <CanvasLineChart
+            data={chartData.errorRate}
+            width={800}
+            height={300}
+            lines={[
+              { dataKey: 'failures', name: 'Nombre d\'échecs', color: '#ef4444' },
+              { dataKey: 'errorRate', name: 'Taux d\'erreur %', color: '#f59e0b' }
+            ]}
+            animate={true}
+            showPoints={true}
+            strokeWidth={2}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée d'erreurs disponible
@@ -320,49 +210,26 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         )}
       </ChartContainer>
 
-      {/* Graphique temporel du volume total de requêtes */}
+      {/* Graphique Canvas du volume total de requêtes */}
       <ChartContainer 
         title="Évolution du Volume de Requêtes" 
         chartId="distribution"
         dataCount={chartData.requestsTotal.length}
       >
         {chartData.requestsTotal.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData.requestsTotal} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Area 
-                type="monotone" 
-                dataKey="successes" 
-                stackId="1" 
-                stroke="#22c55e" 
-                fill="#22c55e" 
-                fillOpacity={0.6} 
-                name="Succès" 
-                isAnimationActive={false}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="failures" 
-                stackId="1" 
-                stroke="#ef4444" 
-                fill="#ef4444" 
-                fillOpacity={0.6} 
-                name="Échecs" 
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <CanvasAreaChart
+            data={chartData.requestsTotal}
+            width={800}
+            height={300}
+            areas={[
+              { dataKey: 'successes', name: 'Succès', color: '#22c55e', stackId: 'main' },
+              { dataKey: 'failures', name: 'Échecs', color: '#ef4444', stackId: 'main' }
+            ]}
+            animate={true}
+            stacked={true}
+            opacity={0.7}
+            strokeWidth={2}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée de volume disponible
@@ -370,39 +237,25 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
         )}
       </ChartContainer>
 
-      {/* Graphique temporel des utilisateurs */}
+      {/* Graphique Canvas des utilisateurs */}
       <ChartContainer 
         title="Évolution des Utilisateurs Actifs" 
         chartId="users"
         dataCount={chartData.userCount.length}
       >
         {chartData.userCount.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData.userCount} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="users" 
-                stroke="#3b82f6" 
-                strokeWidth={3}
-                name="Utilisateurs actifs" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <CanvasAreaChart
+            data={chartData.userCount}
+            width={800}
+            height={300}
+            areas={[
+              { dataKey: 'users', name: 'Utilisateurs actifs', color: '#3b82f6' }
+            ]}
+            animate={true}
+            stacked={false}
+            opacity={0.4}
+            strokeWidth={3}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée d'utilisateurs disponible
@@ -414,7 +267,7 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
       {latestData && (
         <div className="card">
           <h4 className="text-md font-medium text-gray-900 mb-4">
-            Détails des performances
+            Détails des performances (Temps Réel)
           </h4>
           
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -446,44 +299,8 @@ const LocustMetricsCharts = memo(({ historyRef, historyVersion, loading }) => {
               </p>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Détails techniques en temps réel */}
-      {latestData && (
-        <div className="card">
-          <h4 className="text-lg font-medium text-gray-900 mb-4">Détails Techniques (Temps Réel)</h4>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-            <div>
-              <p className="text-gray-500">Total requêtes</p>
-              <p className="font-semibold text-gray-900">
-                {currentMetrics.num_requests?.toLocaleString() || 0}
-              </p>
-            </div>
-            
-            <div>
-              <p className="text-gray-500">Min réponse</p>
-              <p className="font-semibold text-gray-900">
-                {currentMetrics.min_response_time || 0} ms
-              </p>
-            </div>
-            
-            <div>
-              <p className="text-gray-500">Max réponse</p>
-              <p className="font-semibold text-gray-900">
-                {currentMetrics.max_response_time || 0} ms
-              </p>
-            </div>
-            
-            <div>
-              <p className="text-gray-500">95e centile</p>
-              <p className="font-semibold text-gray-900">
-                {currentMetrics['95%_response_time'] || 0} ms
-              </p>
-            </div>
-          </div>
-          
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="text-center p-4 bg-blue-50 rounded-lg">
               <div className="text-2xl font-bold text-blue-600">{latestData.user_count || 0}</div>
               <div className="text-sm text-blue-800">Utilisateurs actifs</div>

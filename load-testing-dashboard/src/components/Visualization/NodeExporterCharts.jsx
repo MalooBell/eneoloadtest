@@ -1,17 +1,5 @@
 import React, { useState, memo, useMemo } from 'react';
 import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer
-} from 'recharts';
-import {
   CpuChipIcon,
   CircleStackIcon,
   ServerIcon,
@@ -20,23 +8,8 @@ import {
   EyeSlashIcon
 } from '@heroicons/react/24/outline';
 import MetricCard from '../Common/MetricCard';
-
-// Composant Tooltip personnalisé pour éviter les re-rendus
-const CustomTooltip = memo(({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
-        <p className="text-sm font-medium text-gray-900">{`Temps: ${label}`}</p>
-        {payload.map((entry, index) => (
-          <p key={index} className="text-sm" style={{ color: entry.color }}>
-            {`${entry.name}: ${entry.value}${entry.unit || ''}`}
-          </p>
-        ))}
-      </div>
-    );
-  }
-  return null;
-});
+import CanvasLineChart from './components/CanvasLineChart';
+import CanvasAreaChart from './components/CanvasAreaChart';
 
 const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
   const [visibleCharts, setVisibleCharts] = useState({
@@ -55,7 +28,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
     }));
   };
 
-  // AJOUTEZ CETTE LIGNE POUR DÉRIVER latestData
+  // Dériver latestData depuis historyRef
   const latestData = useMemo(() => historyRef.current.latestData, [historyRef, historyVersion]);
 
   // Fonction utilitaire pour traiter les métriques Prometheus
@@ -143,7 +116,7 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
       network: history.network || [],
       load: history.load || []
     };
-  }, [historyRef, historyVersion]); // Le re-calcul se fait uniquement quand la version change !
+  }, [historyRef, historyVersion]);
 
   if (loading && !latestData) {
     return (
@@ -225,39 +198,24 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         </div>
       )}
 
-      {/* Graphique temporel CPU */}
+      {/* Graphique Canvas CPU */}
       <ChartContainer 
         title="Évolution de l'Utilisation CPU" 
         chartId="cpu"
         dataCount={chartData.cpu.length}
       >
         {chartData.cpu.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData.cpu} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="usage" 
-                stroke="#3b82f6" 
-                strokeWidth={2}
-                name="Utilisation CPU %" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <CanvasLineChart
+            data={chartData.cpu}
+            width={800}
+            height={300}
+            lines={[
+              { dataKey: 'usage', name: 'Utilisation CPU %', color: '#3b82f6' }
+            ]}
+            animate={true}
+            showPoints={false}
+            strokeWidth={2}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée CPU disponible
@@ -265,49 +223,26 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         )}
       </ChartContainer>
 
-      {/* Graphique temporel mémoire */}
+      {/* Graphique Canvas mémoire */}
       <ChartContainer 
         title="Évolution de l'Utilisation Mémoire" 
         chartId="memory"
         dataCount={chartData.memory.length}
       >
         {chartData.memory.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData.memory} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Area 
-                type="monotone" 
-                dataKey="used" 
-                stackId="1" 
-                stroke="#ef4444" 
-                fill="#ef4444" 
-                fillOpacity={0.6} 
-                name="Utilisée (GB)" 
-                isAnimationActive={false}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="available" 
-                stackId="1" 
-                stroke="#22c55e" 
-                fill="#22c55e" 
-                fillOpacity={0.6} 
-                name="Disponible (GB)" 
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <CanvasAreaChart
+            data={chartData.memory}
+            width={800}
+            height={300}
+            areas={[
+              { dataKey: 'used', name: 'Utilisée (GB)', color: '#ef4444', stackId: 'memory' },
+              { dataKey: 'available', name: 'Disponible (GB)', color: '#22c55e', stackId: 'memory' }
+            ]}
+            animate={true}
+            stacked={true}
+            opacity={0.6}
+            strokeWidth={2}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée mémoire disponible
@@ -315,49 +250,26 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         )}
       </ChartContainer>
 
-      {/* Graphique temporel disque */}
+      {/* Graphique Canvas disque */}
       <ChartContainer 
         title="Évolution de l'Utilisation Disque" 
         chartId="disk"
         dataCount={chartData.disk.length}
       >
         {chartData.disk.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData.disk} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Area 
-                type="monotone" 
-                dataKey="used" 
-                stackId="1" 
-                stroke="#ef4444" 
-                fill="#ef4444" 
-                fillOpacity={0.6} 
-                name="Utilisé (GB)" 
-                isAnimationActive={false}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="available" 
-                stackId="1" 
-                stroke="#22c55e" 
-                fill="#22c55e" 
-                fillOpacity={0.6} 
-                name="Disponible (GB)" 
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <CanvasAreaChart
+            data={chartData.disk}
+            width={800}
+            height={300}
+            areas={[
+              { dataKey: 'used', name: 'Utilisé (GB)', color: '#ef4444', stackId: 'disk' },
+              { dataKey: 'available', name: 'Disponible (GB)', color: '#22c55e', stackId: 'disk' }
+            ]}
+            animate={true}
+            stacked={true}
+            opacity={0.6}
+            strokeWidth={2}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée disque disponible
@@ -365,49 +277,26 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         )}
       </ChartContainer>
 
-      {/* Graphique temporel réseau */}
+      {/* Graphique Canvas réseau */}
       <ChartContainer 
         title="Évolution du Trafic Réseau" 
         chartId="network"
         dataCount={chartData.network.length}
       >
         {chartData.network.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={chartData.network} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Area 
-                type="monotone" 
-                dataKey="rx" 
-                stackId="1" 
-                stroke="#3b82f6" 
-                fill="#3b82f6" 
-                fillOpacity={0.6} 
-                name="Reçu (MB)" 
-                isAnimationActive={false}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="tx" 
-                stackId="1" 
-                stroke="#10b981" 
-                fill="#10b981" 
-                fillOpacity={0.6} 
-                name="Envoyé (MB)" 
-                isAnimationActive={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <CanvasAreaChart
+            data={chartData.network}
+            width={800}
+            height={300}
+            areas={[
+              { dataKey: 'rx', name: 'Reçu (MB)', color: '#3b82f6', stackId: 'network' },
+              { dataKey: 'tx', name: 'Envoyé (MB)', color: '#10b981', stackId: 'network' }
+            ]}
+            animate={true}
+            stacked={true}
+            opacity={0.6}
+            strokeWidth={2}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée réseau disponible
@@ -415,59 +304,26 @@ const NodeExporterCharts = memo(({ historyRef, historyVersion, loading }) => {
         )}
       </ChartContainer>
 
-      {/* Graphique temporel load average */}
+      {/* Graphique Canvas load average */}
       <ChartContainer 
         title="Évolution du Load Average" 
         chartId="load"
         dataCount={chartData.load.length}
       >
         {chartData.load.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData.load} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis 
-                dataKey="time" 
-                angle={-45} 
-                textAnchor="end" 
-                height={80}
-                interval="preserveStartEnd"
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
-              <Line 
-                type="monotone" 
-                dataKey="load1" 
-                stroke="#ef4444" 
-                strokeWidth={2}
-                name="1 minute" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="load5" 
-                stroke="#f59e0b" 
-                strokeWidth={2}
-                name="5 minutes" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="load15" 
-                stroke="#10b981" 
-                strokeWidth={2}
-                name="15 minutes" 
-                dot={false}
-                connectNulls={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <CanvasLineChart
+            data={chartData.load}
+            width={800}
+            height={300}
+            lines={[
+              { dataKey: 'load1', name: '1 minute', color: '#ef4444' },
+              { dataKey: 'load5', name: '5 minutes', color: '#f59e0b' },
+              { dataKey: 'load15', name: '15 minutes', color: '#10b981' }
+            ]}
+            animate={true}
+            showPoints={false}
+            strokeWidth={2}
+          />
         ) : (
           <div className="h-[300px] flex items-center justify-center text-gray-500">
             Aucune donnée de load average disponible

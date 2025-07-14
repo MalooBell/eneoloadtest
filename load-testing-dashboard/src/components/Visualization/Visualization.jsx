@@ -15,8 +15,8 @@ import LocustMetricsCharts from './LocustMetricsCharts';
 import NodeExporterCharts from './NodeExporterCharts';
 
 // Nombre maximum de points de données à conserver dans les graphiques pour la performance
-const MAX_DATA_POINTS = 200;
-const UPDATE_THROTTLE_MS = 2000; // Throttle les mises à jour à 2 secondes minimum
+const MAX_DATA_POINTS = 500; // Augmenté pour plus de détails
+const UPDATE_THROTTLE_MS = 500; // Réduit pour plus de fluidité
 
 
 const Visualization = () => {
@@ -94,11 +94,12 @@ const Visualization = () => {
   const hasSignificantChange = useCallback((oldData, newData, threshold = 0.1) => {
     if (!oldData || !newData) return true;
     
-    // Comparer quelques métriques clés pour éviter les mises à jour inutiles
+    // Comparer les métriques clés pour un rendu plus fluide
     const oldValue = oldData.avg_response_time || 0;
     const newValue = newData.avg_response_time || 0;
     
-    return Math.abs(oldValue - newValue) > threshold;
+    // Seuil plus bas pour plus de réactivité
+    return Math.abs(oldValue - newValue) > (threshold * 0.5);
   }, []);
 
   // Accumulation des données Locust avec throttling et useRef
@@ -461,7 +462,7 @@ const Visualization = () => {
   // Effet pour l'auto-refresh des métriques Node uniquement
   useEffect(() => {
     if (autoRefresh) {
-      const interval = setInterval(fetchNodeData, 5000); // Refresh Node toutes les 5 secondes
+      const interval = setInterval(fetchNodeData, 2000); // Refresh Node toutes les 2 secondes pour plus de fluidité
       refreshIntervalRef.current = interval;
       return () => {
         clearInterval(interval);
@@ -506,7 +507,7 @@ const Visualization = () => {
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Visualisation des Métriques</h2>
           <p className="text-gray-600 mt-1">
-            Graphiques temporels avec historique accumulé ({MAX_DATA_POINTS} points max)
+            Graphiques Canvas haute performance avec historique accumulé ({MAX_DATA_POINTS} points max)
           </p>
         </div>
         
