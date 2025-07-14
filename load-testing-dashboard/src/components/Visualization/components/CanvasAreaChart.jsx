@@ -189,7 +189,21 @@ const CanvasAreaChart = ({
       .range([0, width - margin.left - margin.right])
       .padding(0.1);
 
-    const closestTimeIndex = d3.bisectLeft(timeValues, xScale.invert(x));
+    // const closestTimeIndex = d3.bisectLeft(timeValues, xScale.invert(x));
+    // const closestTime = timeValues[closestTimeIndex];
+
+    // Find the closest point without using invert
+    let closestTimeIndex = 0;
+    let minDistance = Infinity;
+
+    const domain = xScale.domain();
+    domain.forEach((d, i) => {
+      const distance = Math.abs(xScale(d) - x);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestTimeIndex = i;
+      }
+    });
     const closestTime = timeValues[closestTimeIndex];
 
     if (closestTime && tooltipRef.current) {
