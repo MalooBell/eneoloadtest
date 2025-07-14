@@ -36,17 +36,24 @@ const CanvasAreaChart = ({
     smoothCurve: true
   });
 
-  // Préparation des données pour les aires multiples
+  // Préparation des données pour les aires multiples avec échelle temporelle
   const processedData = useMemo(() => {
     if (!data.length || !areas.length) return [];
+
+    // Convertir les timestamps en objets Date
+    const dataWithDates = data.map(d => ({
+      ...d,
+      timestamp: new Date(`2024-01-01 ${d.time}`)
+    }));
 
     return areas.map((area, index) => ({
       key: area.dataKey,
       name: area.name || area.dataKey,
       color: area.color || colors[index % colors.length],
       stackId: area.stackId || (stacked ? 'default' : index),
-      data: data.map(d => ({
+      data: dataWithDates.map(d => ({
         time: d.time,
+        timestamp: d.timestamp,
         value: d[area.dataKey] || 0
       })).filter(d => d.value != null)
     }));
@@ -73,6 +80,7 @@ const CanvasAreaChart = ({
             
             return {
               time: d.time,
+              timestamp: d.timestamp,
               value: d.value,
               y0: prevValue,
               y1: newValue
@@ -87,24 +95,25 @@ const CanvasAreaChart = ({
     return result;
   }, [processedData, stacked]);
 
-  // Fonction de dessin principal avec rendu incrémental
+  // Fonction de dessin principal avec échelle temporelle
   const drawChart = useCallback((progress = 1, incremental = false) => {
     const context = setupCanvas();
     if (!context || !stackedData.length) return;
 
-    // Créer les échelles
+    // Créer les échelles temporelles
     const allValues = stacked 
       ? stackedData.flatMap(area => area.data.map(d => d.y1 || d.value))
       : stackedData.flatMap(area => area.data.map(d => d.value));
-    const timeValues = data.map(d => d.time);
+    const allTimestamps = stackedData[0]?.data.map(d => d.timestamp) || [];
 
-    if (!timeValues.length || !allValues.length) return;
+    if (!allTimestamps.length || !allValues.length) return;
 
-    // Utiliser scaleLinear pour avoir la méthode invert
-    const xScale = d3.scaleLinear()
-      .domain([0, timeValues.length - 1])
+    // Échelle temporelle pour l'axe X
+    const xScale = d3.scaleTime()
+      .domain(d3.extent(allTimestamps))
       .range([0, width - margin.left - margin.right]);
 
+    // Échelle linéaire pour l'axe Y
     const yScale = d3.scaleLinear()
       .domain([0, d3.max(allValues) * 1.1])
       .range([height - margin.top - margin.bottom, 0])
@@ -114,7 +123,6 @@ const CanvasAreaChart = ({
 
     // Rendu incrémental ou complet
     if (incremental && lastDataLengthRef.current > 0) {
-      // Dessiner seulement les nouveaux segments
       const newPointsStart = lastDataLengthRef.current - 1;
       
       context.save();
@@ -126,7 +134,7 @@ const CanvasAreaChart = ({
         const newSegmentData = areaData.data.slice(newPointsStart);
         if (newSegmentData.length < 2) return;
 
-        // Dessiner le nouveau segment d'aire
+        // Dessiner le nouveau segment d'aire avec échelle temporelle
         const gradient = context.createLinearGradient(0, 0, 0, innerHeight);
         gradient.addColorStop(0, areaData.color + Math.floor(opacity * 255).toString(16).padStart(2, '0'));
         gradient.addColorStop(1, areaData.color + '10');
@@ -135,11 +143,10 @@ const CanvasAreaChart = ({
         context.strokeStyle = areaData.color;
         context.lineWidth = strokeWidth;
 
-        // Créer le chemin pour le nouveau segment
+        // Créer le chemin pour le nouveau segment avec échelle temporelle
         context.beginPath();
         newSegmentData.forEach((d, i) => {
-          const actualIndex = newPointsStart + i;
-          const x = xScale(actualIndex);
+          const x = xScale(d.timestamp);
           const y0 = stacked ? yScale(d.y0 || 0) : innerHeight;
           const y1 = yScale(stacked ? (d.y1 || d.value) : d.value);
           
@@ -153,8 +160,7 @@ const CanvasAreaChart = ({
 
         // Fermer le chemin pour l'aire
         for (let i = newSegmentData.length - 1; i >= 0; i--) {
-          const actualIndex = newPointsStart + i;
-          const x = xScale(actualIndex);
+          const x = xScale(newSegmentData[i].timestamp);
           const y0 = stacked ? yScale(newSegmentData[i].y0 || 0) : innerHeight;
           context.lineTo(x, y0);
         }
@@ -171,8 +177,8 @@ const CanvasAreaChart = ({
       // Dessiner la grille
       drawGrid(context, { x: xScale, y: yScale });
 
-      // Dessiner les axes
-      drawAxes(context, { x: xScale, y: yScale });
+      // Dessiner les axes avec formatage temporel
+      drawAxesWithTimeFormat(context, xScale, yScale);
 
       // Dessiner les aires
       context.save();
@@ -188,9 +194,9 @@ const CanvasAreaChart = ({
 
         if (animatedData.length < 2) return;
 
-        // Créer le générateur d'aire
+        // Créer le générateur d'aire avec échelle temporelle
         const area = d3.area()
-          .x((d, i) => xScale(i))
+          .x(d => xScale(d.timestamp))
           .y0(d => stacked ? yScale(d.y0 || 0) : innerHeight)
           .y1(d => yScale(stacked ? (d.y1 || d.value) : d.value))
           .curve(d3.curveCardinal.tension(0.3))
@@ -213,9 +219,9 @@ const CanvasAreaChart = ({
         context.lineJoin = 'round';
         context.globalAlpha = 0.8;
 
-        // Ligne supérieure
+        // Ligne supérieure avec échelle temporelle
         const line = d3.line()
-          .x((d, i) => xScale(i))
+          .x(d => xScale(d.timestamp))
           .y(d => yScale(stacked ? (d.y1 || d.value) : d.value))
           .curve(d3.curveCardinal.tension(0.3))
           .context(context);
@@ -229,30 +235,90 @@ const CanvasAreaChart = ({
 
       context.restore();
     }
-  }, [setupCanvas, stackedData, width, height, margin, drawGrid, drawAxes, stacked, opacity, strokeWidth, data]);
+  }, [setupCanvas, stackedData, width, height, margin, drawGrid, stacked, opacity, strokeWidth]);
 
-  // Gestion du survol pour les tooltips - CORRIGÉ avec scaleLinear
+  // Fonction pour dessiner les axes avec formatage temporel
+  const drawAxesWithTimeFormat = useCallback((context, xScale, yScale) => {
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = height - margin.top - margin.bottom;
+
+    context.save();
+    context.translate(margin.left, margin.top);
+    context.strokeStyle = '#374151';
+    context.fillStyle = '#374151';
+    context.font = '12px Inter, sans-serif';
+    context.lineWidth = 1;
+
+    // Axe X avec formatage temporel
+    context.beginPath();
+    context.moveTo(0, innerHeight);
+    context.lineTo(innerWidth, innerHeight);
+    context.stroke();
+
+    // Labels axe X avec formatage temporel
+    const xTicks = xScale.ticks(6);
+    const timeFormat = d3.timeFormat('%H:%M:%S');
+    context.textAlign = 'center';
+    context.textBaseline = 'top';
+    xTicks.forEach(tick => {
+      const x = xScale(tick);
+      context.fillText(timeFormat(tick), x, innerHeight + 10);
+    });
+
+    // Axe Y
+    context.beginPath();
+    context.moveTo(0, 0);
+    context.lineTo(0, innerHeight);
+    context.stroke();
+
+    // Labels axe Y
+    const yTicks = yScale.ticks(6);
+    context.textAlign = 'right';
+    context.textBaseline = 'middle';
+    yTicks.forEach(tick => {
+      const y = yScale(tick);
+      context.fillText(tick.toString(), -10, y);
+    });
+
+    context.restore();
+  }, [width, height, margin]);
+
+  // Gestion du survol pour les tooltips avec échelle temporelle
   const handleMouseMove = useCallback((event) => {
     if (!canvasRef.current || !stackedData.length) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const x = event.clientX - rect.left - margin.left;
 
-    // Trouver le point le plus proche
-    const timeValues = data.map(d => d.time);
-    const xScale = d3.scaleLinear()
-      .domain([0, timeValues.length - 1])
+    // Trouver le point le plus proche avec échelle temporelle
+    const allTimestamps = stackedData[0]?.data.map(d => d.timestamp) || [];
+    if (!allTimestamps.length) return;
+
+    const xScale = d3.scaleTime()
+      .domain(d3.extent(allTimestamps))
       .range([0, width - margin.left - margin.right]);
 
-    // Maintenant on peut utiliser invert car c'est scaleLinear
-    const mouseIndex = Math.round(xScale.invert(x));
-    const closestTimeIndex = Math.max(0, Math.min(mouseIndex, timeValues.length - 1));
-    const closestTime = timeValues[closestTimeIndex];
+    // Utiliser invert pour trouver le timestamp le plus proche
+    const mouseTime = xScale.invert(x);
+    
+    // Trouver l'index du point le plus proche
+    let closestIndex = 0;
+    let minDistance = Math.abs(allTimestamps[0] - mouseTime);
+    
+    for (let i = 1; i < allTimestamps.length; i++) {
+      const distance = Math.abs(allTimestamps[i] - mouseTime);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      }
+    }
+
+    const closestTime = stackedData[0].data[closestIndex]?.time;
 
     if (closestTime && tooltipRef.current) {
       const tooltipData = stackedData.map(area => ({
         name: area.name,
-        value: data[closestTimeIndex]?.[area.key] || 0,
+        value: area.data[closestIndex]?.value || 0,
         color: area.color
       }));
 
@@ -268,13 +334,13 @@ const CanvasAreaChart = ({
           ${tooltipData.map(item => `
             <div class="flex items-center space-x-2">
               <div class="w-3 h-3 rounded-full" style="background-color: ${item.color}"></div>
-              <span>${item.name}: ${item.value}</span>
+              <span>${item.name}: ${typeof item.value === 'number' ? item.value.toFixed(1) : item.value}</span>
             </div>
           `).join('')}
         </div>
       `;
     }
-  }, [canvasRef, stackedData, data, margin, width]);
+  }, [canvasRef, stackedData, margin, width]);
 
   const handleMouseLeave = useCallback(() => {
     if (tooltipRef.current) {

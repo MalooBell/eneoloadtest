@@ -18,7 +18,6 @@ const CanvasLineChart = ({
   const hoverDataRef = useRef(null);
   const lastDataLengthRef = useRef(0);
   const animationFrameRef = useRef(null);
-  const previousPathsRef = useRef([]);
 
   const {
     canvasRef,
@@ -37,37 +36,45 @@ const CanvasLineChart = ({
     smoothCurve: true
   });
 
-  // Préparation des données pour les lignes multiples
+  // Préparation des données pour les lignes multiples avec échelle temporelle
   const processedData = useMemo(() => {
     if (!data.length || !lines.length) return [];
+
+    // Convertir les timestamps en objets Date pour une échelle temporelle appropriée
+    const dataWithDates = data.map(d => ({
+      ...d,
+      timestamp: new Date(`2024-01-01 ${d.time}`) // Convertir le format HH:MM:SS en Date
+    }));
 
     return lines.map((line, index) => ({
       key: line.dataKey,
       name: line.name || line.dataKey,
       color: line.color || colors[index % colors.length],
-      data: data.map(d => ({
+      data: dataWithDates.map(d => ({
         time: d.time,
+        timestamp: d.timestamp,
         value: d[line.dataKey] || 0
       })).filter(d => d.value != null)
     }));
   }, [data, lines, colors]);
 
-  // Fonction de dessin optimisée pour la fluidité avec rendu incrémental
+  // Fonction de dessin optimisée avec échelle temporelle
   const drawChart = useCallback((progress = 1, incremental = false) => {
     const context = setupCanvas();
     if (!context || !processedData.length) return;
 
-    // Créer les échelles basées sur toutes les données
+    // Créer les échelles basées sur les timestamps réels
     const allValues = processedData.flatMap(line => line.data.map(d => d.value));
-    const timeValues = data.map(d => d.time);
+    const allTimestamps = processedData[0]?.data.map(d => d.timestamp) || [];
 
-    if (!timeValues.length || !allValues.length) return;
+    if (!allTimestamps.length || !allValues.length) return;
 
-    // Utiliser scaleLinear pour avoir la méthode invert
-    const xScale = d3.scaleLinear()
-      .domain([0, timeValues.length - 1])
+    // Échelle temporelle pour l'axe X
+    const xScale = d3.scaleTime()
+      .domain(d3.extent(allTimestamps))
       .range([0, width - margin.left - margin.right]);
 
+    // Échelle linéaire pour l'axe Y
     const yScale = d3.scaleLinear()
       .domain([Math.min(0, d3.min(allValues)), d3.max(allValues) * 1.1])
       .range([height - margin.top - margin.bottom, 0])
@@ -75,7 +82,6 @@ const CanvasLineChart = ({
 
     // Pour le rendu incrémental, on ne redessine que les nouveaux points
     if (incremental && lastDataLengthRef.current > 0) {
-      // Dessiner seulement les nouveaux segments
       const newPointsStart = lastDataLengthRef.current - 1;
       
       context.save();
@@ -96,11 +102,10 @@ const CanvasLineChart = ({
         context.shadowBlur = 2;
         context.globalAlpha = 0.8;
 
-        // Dessiner le nouveau segment
+        // Dessiner le nouveau segment avec échelle temporelle
         context.beginPath();
         newSegmentData.forEach((d, i) => {
-          const actualIndex = newPointsStart + i;
-          const x = xScale(actualIndex);
+          const x = xScale(d.timestamp);
           const y = yScale(d.value);
           
           if (i === 0) {
@@ -115,9 +120,8 @@ const CanvasLineChart = ({
         if (showPoints) {
           context.fillStyle = lineData.color;
           context.shadowBlur = 0;
-          newSegmentData.forEach((d, i) => {
-            const actualIndex = newPointsStart + i;
-            const x = xScale(actualIndex);
+          newSegmentData.forEach((d) => {
+            const x = xScale(d.timestamp);
             const y = yScale(d.value);
             
             context.beginPath();
@@ -135,9 +139,11 @@ const CanvasLineChart = ({
       // Rendu complet
       context.clearRect(0, 0, width, height);
 
-      // Dessiner la grille et les axes
+      // Dessiner la grille avec échelles temporelles
       drawGrid(context, { x: xScale, y: yScale });
-      drawAxes(context, { x: xScale, y: yScale });
+      
+      // Dessiner les axes avec formatage temporel
+      drawAxesWithTimeFormat(context, xScale, yScale);
 
       // Dessiner les lignes
       context.save();
@@ -162,11 +168,11 @@ const CanvasLineChart = ({
         context.shadowBlur = 3;
         context.globalAlpha = 0.8;
 
-        // Générer le chemin de la ligne avec courbe lisse
+        // Générer le chemin de la ligne avec courbe lisse et échelle temporelle
         context.beginPath();
         
         const line = d3.line()
-          .x((d, i) => xScale(i))
+          .x(d => xScale(d.timestamp))
           .y(d => yScale(d.value))
           .curve(d3.curveCardinal.tension(0.3))
           .context(context);
@@ -181,8 +187,8 @@ const CanvasLineChart = ({
         // Dessiner les points si demandé
         if (showPoints) {
           context.fillStyle = lineData.color;
-          animatedData.forEach((d, i) => {
-            const x = xScale(i);
+          animatedData.forEach((d) => {
+            const x = xScale(d.timestamp);
             const y = yScale(d.value);
             
             context.beginPath();
@@ -203,30 +209,90 @@ const CanvasLineChart = ({
 
       context.restore();
     }
-  }, [setupCanvas, processedData, width, height, margin, drawGrid, drawAxes, strokeWidth, showPoints, data]);
+  }, [setupCanvas, processedData, width, height, margin, drawGrid, strokeWidth, showPoints]);
 
-  // Gestion du survol pour les tooltips - CORRIGÉ avec scaleLinear
+  // Fonction pour dessiner les axes avec formatage temporel
+  const drawAxesWithTimeFormat = useCallback((context, xScale, yScale) => {
+    const innerWidth = width - margin.left - margin.right;
+    const innerHeight = height - margin.top - margin.bottom;
+
+    context.save();
+    context.translate(margin.left, margin.top);
+    context.strokeStyle = '#374151';
+    context.fillStyle = '#374151';
+    context.font = '12px Inter, sans-serif';
+    context.lineWidth = 1;
+
+    // Axe X avec formatage temporel
+    context.beginPath();
+    context.moveTo(0, innerHeight);
+    context.lineTo(innerWidth, innerHeight);
+    context.stroke();
+
+    // Labels axe X avec formatage temporel
+    const xTicks = xScale.ticks(6);
+    const timeFormat = d3.timeFormat('%H:%M:%S');
+    context.textAlign = 'center';
+    context.textBaseline = 'top';
+    xTicks.forEach(tick => {
+      const x = xScale(tick);
+      context.fillText(timeFormat(tick), x, innerHeight + 10);
+    });
+
+    // Axe Y
+    context.beginPath();
+    context.moveTo(0, 0);
+    context.lineTo(0, innerHeight);
+    context.stroke();
+
+    // Labels axe Y
+    const yTicks = yScale.ticks(6);
+    context.textAlign = 'right';
+    context.textBaseline = 'middle';
+    yTicks.forEach(tick => {
+      const y = yScale(tick);
+      context.fillText(tick.toString(), -10, y);
+    });
+
+    context.restore();
+  }, [width, height, margin]);
+
+  // Gestion du survol pour les tooltips avec échelle temporelle
   const handleMouseMove = useCallback((event) => {
     if (!canvasRef.current || !processedData.length) return;
 
     const rect = canvasRef.current.getBoundingClientRect();
     const x = event.clientX - rect.left - margin.left;
 
-    // Trouver le point le plus proche avec échelle linéaire
-    const timeValues = data.map(d => d.time);
-    const xScale = d3.scaleLinear()
-      .domain([0, timeValues.length - 1])
+    // Trouver le point le plus proche avec échelle temporelle
+    const allTimestamps = processedData[0]?.data.map(d => d.timestamp) || [];
+    if (!allTimestamps.length) return;
+
+    const xScale = d3.scaleTime()
+      .domain(d3.extent(allTimestamps))
       .range([0, width - margin.left - margin.right]);
 
-    // Maintenant on peut utiliser invert car c'est scaleLinear
-    const mouseIndex = Math.round(xScale.invert(x));
-    const closestTimeIndex = Math.max(0, Math.min(mouseIndex, timeValues.length - 1));
-    const closestTime = timeValues[closestTimeIndex];
+    // Utiliser invert pour trouver le timestamp le plus proche
+    const mouseTime = xScale.invert(x);
+    
+    // Trouver l'index du point le plus proche
+    let closestIndex = 0;
+    let minDistance = Math.abs(allTimestamps[0] - mouseTime);
+    
+    for (let i = 1; i < allTimestamps.length; i++) {
+      const distance = Math.abs(allTimestamps[i] - mouseTime);
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestIndex = i;
+      }
+    }
+
+    const closestTime = processedData[0].data[closestIndex]?.time;
 
     if (closestTime && tooltipRef.current) {
       const tooltipData = processedData.map(line => ({
         name: line.name,
-        value: data[closestTimeIndex]?.[line.key] || 0,
+        value: line.data[closestIndex]?.value || 0,
         color: line.color
       }));
 
@@ -242,13 +308,13 @@ const CanvasLineChart = ({
           ${tooltipData.map(item => `
             <div class="flex items-center space-x-2">
               <div class="w-3 h-3 rounded-full" style="background-color: ${item.color}"></div>
-              <span>${item.name}: ${item.value}</span>
+              <span>${item.name}: ${typeof item.value === 'number' ? item.value.toFixed(1) : item.value}</span>
             </div>
           `).join('')}
         </div>
       `;
     }
-  }, [canvasRef, processedData, data, margin, width]);
+  }, [canvasRef, processedData, margin, width]);
 
   const handleMouseLeave = useCallback(() => {
     if (tooltipRef.current) {
@@ -263,7 +329,7 @@ const CanvasLineChart = ({
       const currentDataLength = data.length;
       const isIncremental = currentDataLength > lastDataLengthRef.current && 
                            lastDataLengthRef.current > 0 && 
-                           currentDataLength - lastDataLengthRef.current < 5; // Seulement pour de petits ajouts
+                           currentDataLength - lastDataLengthRef.current < 5;
       
       if (isIncremental) {
         // Mise à jour incrémentale pour plus de fluidité
@@ -271,7 +337,7 @@ const CanvasLineChart = ({
           cancelAnimationFrame(animationFrameRef.current);
         }
         animationFrameRef.current = requestAnimationFrame(() => {
-          drawChart(1, true); // Rendu incrémental
+          drawChart(1, true);
         });
       } else {
         // Première fois ou changement majeur - animation complète
