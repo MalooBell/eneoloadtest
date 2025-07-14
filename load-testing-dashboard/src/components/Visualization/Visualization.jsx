@@ -19,12 +19,13 @@ const MAX_DATA_POINTS = 500; // Augmenté pour plus de détails
 const UPDATE_THROTTLE_MS = 500; // Réduit pour plus de fluidité
 
 
-const Visualization = () => {
+const Visualization = ({ selectedHistoricalTest, onClearSelection }) => {
   const [activeSection, setActiveSection] = useState('locust');
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [isTestRunning, setIsTestRunning] = useState(false);
+  const [historicalMode, setHistoricalMode] = useState(false);
   
   // Refs pour éviter les re-créations inutiles
   const refreshIntervalRef = useRef(null);
@@ -456,8 +457,157 @@ const Visualization = () => {
 
   // Effet pour le chargement initial
   useEffect(() => {
-    fetchAllData();
-  }, [fetchAllData]);
+    // Si on a un test historique sélectionné, passer en mode historique
+    if (selectedHistoricalTest) {
+      setHistoricalMode(true);
+      setAutoRefresh(false);
+      // Charger les données historiques pour ce test
+      loadHistoricalTestData(selectedHistoricalTest);
+    } else {
+      setHistoricalMode(false);
+      fetchAllData();
+    }
+  }, [selectedHistoricalTest, fetchAllData]);
+
+  // Fonction pour charger les données d'un test historique
+  const loadHistoricalTestData = useCallback(async (testData) => {
+    try {
+      setLoading(true);
+      
+      // Simuler des données historiques basées sur les informations du test
+      // En production, vous récupéreriez les vraies données depuis la base
+      const mockHistoricalData = generateMockHistoricalData(testData);
+      
+      // Remplir les références avec les données historiques
+      locustHistoryRef.current = mockHistoricalData.locust;
+      nodeHistoryRef.current = mockHistoricalData.node;
+      
+      // Forcer le re-rendu
+      setHistoryVersion(v => v + 1);
+      setLastUpdate(new Date(testData.end_time || testData.start_time));
+      
+    } catch (error) {
+      console.error('Erreur chargement données historiques:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Fonction pour générer des données historiques simulées
+  const generateMockHistoricalData = useCallback((testData) => {
+    const startTime = new Date(testData.start_time);
+    const endTime = new Date(testData.end_time || Date.now());
+    const duration = endTime - startTime;
+    const points = Math.min(100, Math.max(10, Math.floor(duration / 30000))); // Un point toutes les 30 secondes
+    
+    const locustData = {
+      latestData: null,
+      responseTime: [],
+      requestsRate: [],
+      errorRate: [],
+      userCount: [],
+      requestsTotal: []
+    };
+    
+    const nodeData = {
+      latestData: null,
+      cpu: [],
+      memory: [],
+      disk: [],
+      network: [],
+      load: []
+    };
+    
+    // Générer des points de données simulés
+    for (let i = 0; i < points; i++) {
+      const timestamp = new Date(startTime.getTime() + (duration * i / points));
+      const timeStr = timestamp.toLocaleTimeString('fr-FR', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit' 
+      });
+      
+      // Données Locust simulées
+      const progress = i / points;
+      const baseResponseTime = testData.avg_response_time || 200;
+      const baseRps = testData.requests_per_second || 10;
+      const baseUsers = testData.users || 10;
+      
+      locustData.responseTime.push({
+        time: timeStr,
+        avg: Math.round(baseResponseTime * (0.8 + Math.random() * 0.4)),
+        median: Math.round(baseResponseTime * 0.9 * (0.8 + Math.random() * 0.4)),
+        p95: Math.round(baseResponseTime * 1.5 * (0.8 + Math.random() * 0.4)),
+        min: Math.round(baseResponseTime * 0.5),
+        max: Math.round(baseResponseTime * 2)
+      });
+      
+      locustData.requestsRate.push({
+        time: timeStr,
+        rps: Math.round(baseRps * progress * (0.8 + Math.random() * 0.4) * 10) / 10,
+        totalRps: Math.round(baseRps * progress * 10) / 10
+      });
+      
+      locustData.errorRate.push({
+        time: timeStr,
+        errorRate: (testData.error_rate || 0) * (0.5 + Math.random()),
+        failures: Math.floor((testData.total_failures || 0) * progress),
+        requests: Math.floor((testData.total_requests || 0) * progress)
+      });
+      
+      locustData.userCount.push({
+        time: timeStr,
+        users: Math.floor(baseUsers * Math.min(1, progress * 2)),
+        state: progress > 0.1 ? 1 : 0
+      });
+      
+      locustData.requestsTotal.push({
+        time: timeStr,
+        total: Math.floor((testData.total_requests || 0) * progress),
+        successes: Math.floor(((testData.total_requests || 0) - (testData.total_failures || 0)) * progress),
+        failures: Math.floor((testData.total_failures || 0) * progress)
+      });
+      
+      // Données Node simulées
+      nodeData.cpu.push({
+        time: timeStr,
+        usage: Math.round(30 + Math.random() * 40 + progress * 20),
+        cores: 4
+      });
+      
+      nodeData.memory.push({
+        time: timeStr,
+        used: Math.round(4 + Math.random() * 2 + progress),
+        total: 16,
+        percentage: Math.round((4 + Math.random() * 2 + progress) / 16 * 100),
+        available: Math.round(16 - (4 + Math.random() * 2 + progress))
+      });
+      
+      nodeData.disk.push({
+        time: timeStr,
+        used: Math.round(50 + Math.random() * 10),
+        total: 100,
+        percentage: Math.round(50 + Math.random() * 10),
+        available: Math.round(50 - Math.random() * 10)
+      });
+      
+      nodeData.network.push({
+        time: timeStr,
+        rx: Math.round(Math.random() * 100 + progress * 50),
+        tx: Math.round(Math.random() * 50 + progress * 25),
+        total: Math.round(Math.random() * 150 + progress * 75)
+      });
+      
+      nodeData.load.push({
+        time: timeStr,
+        load1: Math.round((0.5 + Math.random() * 1.5 + progress) * 100) / 100,
+        load5: Math.round((0.4 + Math.random() * 1.2 + progress * 0.8) * 100) / 100,
+        load15: Math.round((0.3 + Math.random() * 1.0 + progress * 0.6) * 100) / 100
+      });
+    }
+    
+    return { locust: locustData, node: nodeData };
+  }, []);
 
   // Effet pour l'auto-refresh des métriques Node uniquement
   useEffect(() => {
@@ -505,13 +655,40 @@ const Visualization = () => {
       {/* En-tête */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Visualisation des Métriques</h2>
+          <div className="flex items-center space-x-4">
+            <h2 className="text-2xl font-bold text-gray-900">Visualisation des Métriques</h2>
+            {historicalMode && selectedHistoricalTest && (
+              <div className="flex items-center space-x-2 px-3 py-1 bg-blue-50 rounded-full">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <span className="text-sm font-medium text-blue-700">
+                  Mode historique: {selectedHistoricalTest.name}
+                </span>
+              </div>
+            )}
+          </div>
           <p className="text-gray-600 mt-1">
-            Graphiques Canvas haute performance avec historique accumulé ({MAX_DATA_POINTS} points max)
+            {historicalMode 
+              ? `Données historiques du test "${selectedHistoricalTest?.name}" (${new Date(selectedHistoricalTest?.start_time).toLocaleString()})`
+              : `Graphiques Canvas haute performance avec historique accumulé (${MAX_DATA_POINTS} points max)`
+            }
           </p>
         </div>
         
         <div className="flex items-center space-x-3">
+          {historicalMode && (
+            <button
+              onClick={() => {
+                setHistoricalMode(false);
+                onClearSelection();
+                clearHistory();
+                fetchAllData();
+              }}
+              className="flex items-center space-x-2 px-3 py-1 rounded-md text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+            >
+              <span>Retour au temps réel</span>
+            </button>
+          )}
+          
           {isTestRunning && (
             <div className="flex items-center space-x-2 px-3 py-1 bg-success-50 rounded-full">
               <div className="w-2 h-2 bg-success-500 rounded-full animate-pulse"></div>
@@ -543,19 +720,22 @@ const Visualization = () => {
           
           <button
             onClick={toggleAutoRefresh}
+            disabled={historicalMode}
             className={`flex items-center space-x-2 px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-              autoRefresh 
+              historicalMode
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : autoRefresh 
                 ? 'bg-success-100 text-success-700 hover:bg-success-200' 
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
             }`}
           >
             {autoRefresh ? <EyeIcon className="h-4 w-4" /> : <EyeSlashIcon className="h-4 w-4" />}
-            <span>{autoRefresh ? 'Auto' : 'Manuel'}</span>
+            <span>{historicalMode ? 'Historique' : (autoRefresh ? 'Auto' : 'Manuel')}</span>
           </button>
           
           <button
             onClick={handleRefresh}
-            disabled={loading}
+            disabled={loading || historicalMode}
             className="btn-outline"
           >
             {loading ? (
@@ -595,7 +775,9 @@ const Visualization = () => {
       {/* Statistiques de l'historique */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="card p-4">
-          <h4 className="font-medium text-gray-900 mb-2">Historique Locust</h4>
+          <h4 className="font-medium text-gray-900 mb-2">
+            {historicalMode ? 'Données Locust (Historique)' : 'Historique Locust'}
+          </h4>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Points temps réponse:</span>
@@ -609,7 +791,9 @@ const Visualization = () => {
         </div>
         
         <div className="card p-4">
-          <h4 className="font-medium text-gray-900 mb-2">Historique Système</h4>
+          <h4 className="font-medium text-gray-900 mb-2">
+            {historicalMode ? 'Données Système (Historique)' : 'Historique Système'}
+          </h4>
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
               <span className="text-gray-500">Points CPU:</span>

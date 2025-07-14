@@ -140,7 +140,8 @@ function App() {
             selectedHistoricalTest={selectedHistoricalTest}
             onClearSelection={() => setSelectedHistoricalTest(null)}
           />
-  };
+      };
+  }
 
   return (
     <Layout
