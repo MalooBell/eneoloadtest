@@ -213,10 +213,7 @@ const TestHistory = ({ onNavigateToVisualization, isTestRunning }) => {
                         <button
                           onClick={() => handleViewVisualization(test)}
                           className={cn(
-                            'text-purple-600 hover:text-purple-900',
-                            if (selectedTest) {
-                              handleViewVisualization(selectedTest);
-                            }
+                            'text-purple-600 hover:text-purple-900'
                           )}
                           disabled={isTestRunning}
                           title="Voir les graphiques"
@@ -291,8 +288,8 @@ const TestHistory = ({ onNavigateToVisualization, isTestRunning }) => {
             <div className="p-4 bg-gray-50 border-t flex justify-end space-x-3">
               <button
                 onClick={() => {
-                  setSelectedTest(null);
                   handleViewVisualization(selectedTest);
+                  setSelectedTest(null);
                 }}
                 disabled={isTestRunning}
                 className="btn-primary"
